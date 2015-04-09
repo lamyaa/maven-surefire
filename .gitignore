@@ -12,3 +12,6 @@ build
 .surefire-*
 .DS_Store
 *.versionsBackup
+*~
+*.bak
+*\#*
