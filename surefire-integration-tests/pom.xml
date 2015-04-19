@@ -44,6 +44,11 @@
   <dependencies>
     <dependency>
       <groupId>org.apache.maven.surefire</groupId>
+      <artifactId>surefire-shared-utils</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.maven.surefire</groupId>
       <artifactId>surefire-report-parser</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>

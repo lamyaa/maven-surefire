@@ -21,12 +21,14 @@ package org.apache.maven.surefire.util;
 
 import org.apache.maven.plugin.surefire.runorder.RunEntryStatisticsMap;
 import org.apache.maven.surefire.testset.RunOrderParameters;
+import org.apache.maven.surefire.sharedutil.MockTime;
 
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+
+import org.joda.time.DateTime;
 
 /**
  * Applies the final runorder of the tests
@@ -110,7 +112,8 @@ public class DefaultRunOrderCalculator
         }
         else if ( RunOrder.HOURLY.equals( runOrder ) )
         {
-            final int hour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
+            MockTime.setCurrentTime();
+            final int hour = DateTime.now().getHourOfDay();
             return ( ( hour % 2 ) == 0 ) ? getAlphabeticalComparator() : getReverseAlphabeticalComparator();
         }
         else
@@ -140,5 +143,5 @@ public class DefaultRunOrderCalculator
             }
         };
     }
-
+    
 }

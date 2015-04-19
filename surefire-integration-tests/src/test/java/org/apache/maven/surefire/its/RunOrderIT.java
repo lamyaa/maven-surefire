@@ -25,6 +25,7 @@ import org.apache.maven.it.VerificationException;
 import org.apache.maven.surefire.its.fixture.OutputValidator;
 import org.apache.maven.surefire.its.fixture.SurefireJUnit4IntegrationTestCase;
 import org.apache.maven.surefire.its.fixture.SurefireLauncher;
+import org.apache.maven.surefire.sharedutil.MockTime;
 import org.junit.Test;
 
 /**
@@ -61,6 +62,7 @@ public class RunOrderIT
     public void testHourly()
         throws Exception
     {
+        MockTime.setCurrentMilliesPropertyToSystem();
         int startHour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
         OutputValidator validator = executeWithRunOrder( "hourly" );
         int endHour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
@@ -72,6 +74,50 @@ public class RunOrderIT
         String[] testnames =
             ( ( startHour % 2 ) == 0 ) ? TESTS_IN_ALPHABETICAL_ORDER : TESTS_IN_REVERSE_ALPHABETICAL_ORDER;
         assertTestnamesAppearInSpecificOrder( validator, testnames );
+    }
+
+    @Test
+    public void testHourly0()
+        throws Exception
+    {
+        MockTime.setCurrentMilliesProperty( "1429333200000" ); //4/18/15 0:0:0
+        OutputValidator validator = executeWithRunOrder( "hourly" );
+        String[] testnames = TESTS_IN_ALPHABETICAL_ORDER;
+        assertTestnamesAppearInSpecificOrder( validator, testnames );
+        MockTime.setCurrentMilliesPropertyToSystem();
+    }
+
+    @Test
+    public void testHourly23()
+        throws Exception
+    {
+        MockTime.setCurrentMilliesProperty( "1429416000000" ); //4/18/15 23:0:0
+        OutputValidator validator = executeWithRunOrder( "hourly" );
+        String[] testnames = TESTS_IN_REVERSE_ALPHABETICAL_ORDER;
+        assertTestnamesAppearInSpecificOrder( validator, testnames );
+        MockTime.setCurrentMilliesPropertyToSystem();
+    }
+
+    @Test
+    public void testHourly1()
+        throws Exception
+    {
+        MockTime.setCurrentMilliesProperty( "1429336800000" ); //4/18/15 1:0:0
+        OutputValidator validator = executeWithRunOrder( "hourly" );
+        String[] testnames = TESTS_IN_REVERSE_ALPHABETICAL_ORDER;
+        assertTestnamesAppearInSpecificOrder( validator, testnames );
+        MockTime.setCurrentMilliesPropertyToSystem();
+    }
+
+    @Test
+    public void testHourly2()
+        throws Exception
+    {
+        MockTime.setCurrentMilliesProperty( "1429340400000" ); //4/18/15 2:0:0
+        OutputValidator validator = executeWithRunOrder( "hourly" );
+        String[] testnames = TESTS_IN_ALPHABETICAL_ORDER;
+        assertTestnamesAppearInSpecificOrder( validator, testnames );
+        MockTime.setCurrentMilliesPropertyToSystem();
     }
 
     @Test
