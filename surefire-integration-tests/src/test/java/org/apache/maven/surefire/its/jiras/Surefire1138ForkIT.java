@@ -41,10 +41,10 @@ public class Surefire1138ForkIT
 
     private void validate( final OutputValidator outputValidator )
     {
-        TestFile outputFile = outputValidator.getSurefireReportsFile( "p.ATest.txt" );
+        TestFile outputFile = outputValidator.getSurefireReportsFile( "p.ATest-output.txt" );
         outputFile.assertContainsText( "1" );
 
-        outputFile = outputValidator.getSurefireReportsFile( "p.BTest.txt" );
+        outputFile = outputValidator.getSurefireReportsFile( "p.BTest-output.txt" );
         outputFile.assertContainsText( "2" ); // should be different fork
 
     }
