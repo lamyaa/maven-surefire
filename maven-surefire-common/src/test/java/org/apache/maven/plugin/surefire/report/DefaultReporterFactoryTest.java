@@ -135,52 +135,6 @@ public class DefaultReporterFactoryTest
         assertEquals( Arrays.asList( expectedErrorOutput ), reporter.getMessages() );
     }
 
-    public void testMergeTestHistoryResultWithFailuresAndSkips()
-    {
-        StartupReportConfiguration reportConfig = new StartupReportConfiguration( true, true, "PLAIN", false, false, new File("target"), false, null, "TESTHASH",
-                                                                                                 false, 1 );
-
-        DefaultReporterFactory factory = new DefaultReporterFactory( reportConfig );
-
-        // First run, two tests failed and one passed and one was skipped
-        List<TestMethodStats> firstRunStats = new ArrayList<TestMethodStats>();
-        firstRunStats.add( new TestMethodStats( TEST_ONE, ReportEntryType.FAILURE, new DummyStackTraceWriter( ASSERTION_FAIL ) ) );
-        firstRunStats.add( new TestMethodStats( TEST_TWO, ReportEntryType.SKIPPED, null) );
-        firstRunStats.add(
-            new TestMethodStats( TEST_THREE, ReportEntryType.FAILURE, new DummyStackTraceWriter( ASSERTION_FAIL ) ) );
-        firstRunStats.add(
-            new TestMethodStats( TEST_FOUR, ReportEntryType.SUCCESS, null ) );
-
-        // Second run, one passed
-        List<TestMethodStats> secondRunStats = new ArrayList<TestMethodStats>();
-        secondRunStats.add(
-            new TestMethodStats( TEST_ONE, ReportEntryType.FAILURE, new DummyStackTraceWriter( ASSERTION_FAIL ) ) );
-        secondRunStats.add(
-            new TestMethodStats( TEST_THREE, ReportEntryType.SUCCESS, null ) );
-
-
-        TestSetRunListener firstRunListener = mock( TestSetRunListener.class );
-        TestSetRunListener secondRunListener = mock( TestSetRunListener.class );
-
-        when( firstRunListener.getTestMethodStats() ).thenReturn( firstRunStats );
-        when( secondRunListener.getTestMethodStats() ).thenReturn( secondRunStats );
-
-        factory.addListener( firstRunListener );
-        factory.addListener( secondRunListener );
-
-        factory.mergeTestHistoryResult();
-        RunStatistics mergedStatistics = factory.getGlobalRunStatistics();
-
-        // Only TEST_THREE is a failing test, other three are flaky tests
-        assertEquals( 4, mergedStatistics.getCompletedCount() );
-        assertEquals( 0, mergedStatistics.getErrors() );
-        assertEquals( 1, mergedStatistics.getFailures() );
-        assertEquals( 1, mergedStatistics.getFlakes() );
-        assertEquals( 1, mergedStatistics.getSkipped() );
-
-    }
-
-
     static class DummyTestReporter
         extends DefaultDirectConsoleReporter
     {

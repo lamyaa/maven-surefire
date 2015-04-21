@@ -24,7 +24,7 @@ import org.apache.maven.plugin.surefire.report.ConsoleOutputFileReporter;
 
 import junit.framework.TestCase;
 
-public class ConsoleOutputFileReporterTest
+public class AdditionalConsoleOutputFileReporterTest
     extends TestCase
 {
 
@@ -34,30 +34,9 @@ public class ConsoleOutputFileReporterTest
 
     private static final String testName = "org.apache.maven.surefire.report.ConsoleOutputFileReporterTest";
 
-    /*
-     * Test method for 'org.codehaus.surefire.report.ConsoleOutputFileReporter.testSetCompleted(ReportEntry report)'
-     */
-    public void testFileNameWithoutSuffix()
+    public void testDirDoesNotExist()
     {
-        File reportDir = new File( System.getProperty( "java.io.tmpdir" ) );
-        reportEntry = new SimpleReportEntry( this.getClass().getName(), testName );
-        reporter = new ConsoleOutputFileReporter( reportDir, null );
-        reporter.testSetStarting( reportEntry );
-        reporter.writeTestOutput( "some text".getBytes(), 0, 5, true );
-        reporter.testSetCompleted( reportEntry );
-
-        File expectedReportFile = new File( reportDir, testName + "-output.txt" );
-        assertTrue( "Report file (" + expectedReportFile.getAbsolutePath() + ") doesn't exist",
-                    expectedReportFile.exists() );
-        expectedReportFile.delete();
-    }
-
-    /*
-     * Test method for 'org.codehaus.surefire.report.ConsoleOutputFileReporter.testSetCompleted(ReportEntry report)'
-     */
-    public void testFileNameWithSuffix()
-    {
-        File reportDir = new File( System.getProperty( "java.io.tmpdir" ) );
+        File reportDir = new File( System.getProperty( "java.io.tmpdir" ) + "/non_existing_dir" );
         String suffixText = "sampleSuffixText";
         reportEntry = new SimpleReportEntry( this.getClass().getName(), testName );
         reporter = new ConsoleOutputFileReporter( reportDir, suffixText );
@@ -67,8 +46,35 @@ public class ConsoleOutputFileReporterTest
 
         File expectedReportFile = new File( reportDir, testName + "-" + suffixText + "-output.txt" );
         assertTrue( "Report file (" + expectedReportFile.getAbsolutePath() + ") doesn't exist",
-                    expectedReportFile.exists() );
+                    expectedReportFile.exists() ); //should be created
         expectedReportFile.delete();
     }
+
+    public void testCloseAfterWrite()
+    {
+        File reportDir = new File( System.getProperty( "java.io.tmpdir" ) + "/non_existing_dir" );
+        String suffixText = "sampleSuffixText";
+        reportEntry = new SimpleReportEntry( this.getClass().getName(), testName );
+        reporter = new ConsoleOutputFileReporter( reportDir, suffixText );
+        reporter.testSetStarting( reportEntry );
+        reporter.writeTestOutput( "some text".getBytes(), 0, 5, true );
+        reporter.testSetCompleted( reportEntry );
+
+        File expectedReportFile = new File( reportDir, testName + "-" + suffixText + "-output.txt" );
+        assertTrue( "Report file (" + expectedReportFile.getAbsolutePath() + ") doesn't exist",
+                    expectedReportFile.exists() ); //should be created
+        expectedReportFile.delete();
+
+        reporter.close();
+
+        reporter.testSetStarting( reportEntry );
+        reporter.writeTestOutput( "some text".getBytes(), 0, 5, true );
+        reporter.testSetCompleted( reportEntry );
+
+        assertTrue( "Report file (" + expectedReportFile.getAbsolutePath() + ") doesn't exist",
+                    expectedReportFile.exists() ); //should be recreated
+        expectedReportFile.delete();
+    }
+   
 
 }

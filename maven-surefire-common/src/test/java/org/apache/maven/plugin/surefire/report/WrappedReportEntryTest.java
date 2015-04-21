@@ -69,15 +69,4 @@ public class WrappedReportEntryTest
                       elapsedTimeSummary );
     }
 
-    public void testGetOutput()
-	throws Exception
-    {
-        ReportEntry reportEntry = new SimpleReportEntry( "fud", "testSum(surefire.testcase.NonJunitParamsTest)" );
-        WrappedReportEntry wr = new WrappedReportEntry( reportEntry, ReportEntryType.FAILURE, 12, null, null );
-        final String output = wr.getOutput( false );
-	System.out.println( output );
-        assertTrue( output.contains( "testSum(surefire.testcase.NonJunitParamsTest)  Time elapsed: 0.012 sec  <<< FAILURE!" ) );
-    }
-
-
 }
