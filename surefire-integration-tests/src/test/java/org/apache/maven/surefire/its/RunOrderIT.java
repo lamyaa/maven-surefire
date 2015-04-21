@@ -21,6 +21,7 @@ package org.apache.maven.surefire.its;
 
 import java.io.IOException;
 import java.util.Calendar;
+import java.util.Random;
 import org.apache.maven.it.VerificationException;
 import org.apache.maven.surefire.its.fixture.OutputValidator;
 import org.apache.maven.surefire.its.fixture.SurefireJUnit4IntegrationTestCase;
@@ -28,11 +29,20 @@ import org.apache.maven.surefire.its.fixture.SurefireLauncher;
 import org.apache.maven.surefire.sharedutil.MockTime;
 import org.junit.Test;
 
+import static org.junit.Assume.assumeTrue;
+
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
+import org.junit.experimental.theories.DataPoints;
+
+import org.junit.runner.RunWith;
+
 /**
  * Verifies the runOrder setting and its effect
  *
  * @author Kristian Rosenvold
  */
+@RunWith(Theories.class)
 public class RunOrderIT
     extends SurefireJUnit4IntegrationTestCase
 {
@@ -40,7 +50,22 @@ public class RunOrderIT
 
     private static final String[] TESTS_IN_REVERSE_ALPHABETICAL_ORDER = { "TC", "TB", "TA" };
 
+    // cs498dm: Added for parameterized test
+    @DataPoints
+    public static final String[] RUN_ORDERS = {
+        "alphabetical", "reversealphabetical", "random", "hourly", "failedfirst", "balanced", "filesystem"
+    };
+
     // testing random is left as an exercise to the reader. Patches welcome
+
+    // cs498dm: Added for parameterized test
+    @Theory
+    public void testThatAllRun( String runOrder )
+        throws Exception
+    {
+        OutputValidator validator = executeWithRunOrder( runOrder );
+        assertTestNamesAppear( validator, TESTS_IN_ALPHABETICAL_ORDER );
+    }
 
     @Test
     public void testAlphabetical()
@@ -66,10 +91,9 @@ public class RunOrderIT
         int startHour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
         OutputValidator validator = executeWithRunOrder( "hourly" );
         int endHour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
-        if ( startHour != endHour )
-        {
-            return; // Race condition, cannot test when hour changed mid-run
-        }
+
+        // Otherwise, race condition, cannot test when hour changed mid-run
+        assumeTrue( startHour == endHour );
 
         String[] testnames =
             ( ( startHour % 2 ) == 0 ) ? TESTS_IN_ALPHABETICAL_ORDER : TESTS_IN_REVERSE_ALPHABETICAL_ORDER;
@@ -120,6 +144,43 @@ public class RunOrderIT
         MockTime.setCurrentMilliesPropertyToSystem();
     }
 
+    // cs498dm: Added for parameterized test
+    public static Random rand = new Random();
+    @DataPoints
+    public static Long[] timesInMillis() {
+        int NUM_CASES = 20;
+        Long[] result = new Long[NUM_CASES];
+        for (int i = 0; i < result.length; ++i)
+        {
+            result[i] = rand.nextLong();
+            if ( result[i] < 0 )
+                result[i] = -result[i];
+        }
+        return result;
+    }
+
+    // cs498dm: Added for parameterized test
+    @Theory
+    public void testHourlyParameterized ( Long timeInMillis )
+        throws Exception
+    {
+        MockTime.setCurrentMilliesProperty( String.valueOf(timeInMillis) );
+        OutputValidator validator = executeWithRunOrder( "hourly" );
+        String[] testnames = isEvenHour( timeInMillis ) ?
+            TESTS_IN_ALPHABETICAL_ORDER :
+            TESTS_IN_REVERSE_ALPHABETICAL_ORDER;
+        assertTestnamesAppearInSpecificOrder( validator, testnames );
+        MockTime.setCurrentMilliesPropertyToSystem();
+    }
+
+    // cs498dm: Added for parameterized test
+    private boolean isEvenHour( Long timeInMillis )
+    {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(timeInMillis);
+        return c.get(Calendar.HOUR_OF_DAY) % 2 == 0;
+    }
+
     @Test
     public void testNonExistingRunOrder()
         throws Exception
@@ -150,6 +211,16 @@ public class RunOrderIT
         if ( !validator.stringsAppearInSpecificOrderInLog( testnames ) )
         {
             throw new VerificationException( "Response does not contain expected item" );
+        }
+    }
+
+    // cs498dm: Added for parameterized test
+    private void assertTestNamesAppear( OutputValidator validator, String[] testnames )
+        throws VerificationException
+    {
+        for ( String testname : testnames )
+        {
+            validator.verifyTextInLog( testname );
         }
     }
 }
