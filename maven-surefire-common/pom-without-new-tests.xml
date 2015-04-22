@@ -148,6 +148,7 @@
               <exclude>**/DefaultReporterFactoryFailuresAndSkipsTest.java</exclude>
               <exclude>**/WrappedReportEntryOutputTest.java</exclude>
               <exclude>**/AdditionalConsoleOutputFileReporterTest.java</exclude>
+              <exclude>**/PrettyPrintXMLWriterTest.java</exclude>
           </excludes>
         </configuration>
         <dependencies>
