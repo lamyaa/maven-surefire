@@ -468,8 +468,11 @@ public class StatelessXmlReporter
                 {
                     ppw.addAttribute( "type", new StringTokenizer( stackTrace ).nextToken() );
                 }
+
             }
         }
+
+        ppw.addAttribute( "time", report.elapsedTimeAsString() + " sec" );
 
         if ( stackTrace != null )
         {
