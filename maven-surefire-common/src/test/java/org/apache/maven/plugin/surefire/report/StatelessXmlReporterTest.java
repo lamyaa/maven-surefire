@@ -250,8 +250,8 @@ public class StatelessXmlReporterTest
 
         Xpp3Dom testCaseTwo = testcase[1];
         assertEquals( TEST_TWO, testCaseTwo.getAttribute( "name" ) );
-        // Run time for a rerun failing test is the run time of the first run
-        assertEquals( "0.005", testCaseTwo.getAttribute( "time" ) );
+	// Run time for a rerun failing test is the sum of its original run time and rerun times 0.005 + 0.013 = 0.018
+        assertEquals( "0.018", testCaseTwo.getAttribute( "time" ) );
         assertEquals( Inner.class.getName(), testCaseTwo.getAttribute( "classname" ) );
         Xpp3Dom errorNode = testCaseTwo.getChild( "error" );
         Xpp3Dom rerunErrorNode = testCaseTwo.getChild( "rerunError" );
