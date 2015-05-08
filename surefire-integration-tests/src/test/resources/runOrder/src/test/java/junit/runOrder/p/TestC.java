@@ -1,4 +1,4 @@
-package junit.runOrder;
+package junit.runOrder.p;
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -26,6 +26,6 @@ public class TestC
 {
     public void testTwo()
     {
-        System.out.println( "TC" );
+        System.out.println( "p.TC" );
     }
 }

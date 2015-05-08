@@ -1,4 +1,4 @@
-package junit.runOrder;
+package junit.runOrder.q;
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -21,11 +21,11 @@ package junit.runOrder;
 
 import junit.framework.TestCase;
 
-public class TestA
+public class TestB
     extends TestCase
 {
     public void testTwo()
     {
-        System.out.println( "TA" );
+        System.out.println( "q.TB" );
     }
 }
