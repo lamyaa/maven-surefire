@@ -40,6 +40,10 @@ public class RunOrder
 
     public static final RunOrder REVERSE_ALPHABETICAL = new RunOrder( "reversealphabetical" );
 
+    public static final RunOrder SIMPLE_ALPHABETICAL = new RunOrder( "simplealphabetical" );
+
+    public static final RunOrder REVERSE_SIMPLE_ALPHABETICAL = new RunOrder( "reversesimplealphabetical" );
+
     public static final RunOrder BALANCED = new RunOrder( "balanced" );
 
     public static final RunOrder FAILEDFIRST = new RunOrder( "failedfirst" );
@@ -109,7 +113,8 @@ public class RunOrder
 
     private static RunOrder[] values()
     {
-        return new RunOrder[]{ ALPHABETICAL, FILESYSTEM, HOURLY, RANDOM, REVERSE_ALPHABETICAL, BALANCED, FAILEDFIRST };
+        return new RunOrder[]{ ALPHABETICAL, FILESYSTEM, HOURLY, RANDOM, REVERSE_ALPHABETICAL, SIMPLE_ALPHABETICAL,
+                               REVERSE_SIMPLE_ALPHABETICAL, BALANCED, FAILEDFIRST };
     }
 
     public static String asString( RunOrder[] runOrder )

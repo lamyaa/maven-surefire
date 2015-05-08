@@ -35,9 +35,13 @@ import org.junit.Test;
 public class RunOrderIT
     extends SurefireJUnit4IntegrationTestCase
 {
-    private static final String[] TESTS_IN_ALPHABETICAL_ORDER = { "TA", "TB", "TC" };
+    private static final String[] TESTS_IN_ALPHABETICAL_ORDER = { "p.TC", "q.TB", "r.TA" };
 
-    private static final String[] TESTS_IN_REVERSE_ALPHABETICAL_ORDER = { "TC", "TB", "TA" };
+    private static final String[] TESTS_IN_REVERSE_ALPHABETICAL_ORDER = { "r.TA", "q.TB", "p.TC" };
+
+    private static final String[] TESTS_IN_SIMPLE_ALPHABETICAL_ORDER = { "r.TA", "q.TB", "p.TC" };
+
+    private static final String[] TESTS_IN_REVERSE_SIMPLE_ALPHABETICAL_ORDER = { "p.TC", "q.TB", "r.TA" };
 
     // testing random is left as an exercise to the reader. Patches welcome
 
@@ -55,6 +59,22 @@ public class RunOrderIT
     {
         OutputValidator validator = executeWithRunOrder( "reversealphabetical" );
         assertTestnamesAppearInSpecificOrder( validator, TESTS_IN_REVERSE_ALPHABETICAL_ORDER );
+    }
+
+    @Test
+    public void testSimpleAlphabetical()
+        throws Exception
+    {
+        OutputValidator validator = executeWithRunOrder( "simplealphabetical" );
+        assertTestnamesAppearInSpecificOrder( validator, TESTS_IN_SIMPLE_ALPHABETICAL_ORDER );
+    }
+
+    @Test
+    public void testReverseSimpleAlphabetical()
+        throws Exception
+    {
+        OutputValidator validator = executeWithRunOrder( "reversesimplealphabetical" );
+        assertTestnamesAppearInSpecificOrder( validator, TESTS_IN_REVERSE_SIMPLE_ALPHABETICAL_ORDER );
     }
 
     @Test

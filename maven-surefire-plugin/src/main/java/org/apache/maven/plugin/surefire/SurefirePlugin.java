@@ -233,9 +233,13 @@ public class SurefirePlugin
     private File[] suiteXmlFiles;
 
     /**
-     * Defines the order the tests will be run in. Supported values are "alphabetical", "reversealphabetical", "random",
-     * "hourly" (alphabetical on even hours, reverse alphabetical on odd hours), "failedfirst", "balanced" and
-     * "filesystem".
+     * Defines the order the tests will be run in. Supported values are "alphabetical", "reversealphabetical",
+     * "simplealphabetical", "reversesimplealphabetical", "random", "hourly" (alphabetical on even hours,
+     * reverse alphabetical on odd hours), "failedfirst", "balanced" and "filesystem".
+     * <br/>
+     * <br/>
+     * The options "alphabetical" and "reversealphabetical" order classes by their fully qualified names while
+     * "simplealphabetical" and "reversesimplealphabetical" order them by their simple names.
      * <br/>
      * <br/>
      * Odd/Even for hourly is determined at the time the of scanning the classpath, meaning it could change during a
