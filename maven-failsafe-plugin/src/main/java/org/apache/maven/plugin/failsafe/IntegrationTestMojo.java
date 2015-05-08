@@ -246,6 +246,11 @@ public class IntegrationTestMojo
     @Parameter( property = "failsafe.rerunFailingTestsCount", defaultValue = "0" )
     protected int rerunFailingTestsCount;
 
+
+    @Parameter( property = "failsafe.rerunFailingTestsAtEndCount", defaultValue = "0" )
+    protected int rerunFailingTestsAtEndCount;
+
+
     /**
      * (TestNG) List of &lt;suiteXmlFile> elements specifying TestNG suite xml file locations. Note that
      * <code>suiteXmlFiles</code> is incompatible with several other parameters of this plugin, like
@@ -308,6 +313,11 @@ public class IntegrationTestMojo
     protected int getRerunFailingTestsCount()
     {
         return rerunFailingTestsCount;
+    }
+
+    protected int getRerunFailingTestsAtEndCount()
+    {
+        return rerunFailingTestsAtEndCount;
     }
 
     protected void handleSummary( RunResult summary, Exception firstForkException )

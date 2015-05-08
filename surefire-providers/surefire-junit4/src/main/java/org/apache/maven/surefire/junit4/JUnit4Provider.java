@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.maven.surefire.common.junit4.ClassMethod;
@@ -52,6 +53,7 @@ import org.junit.runner.Request;
 import org.junit.runner.Result;
 import org.junit.runner.Runner;
 import org.junit.runner.manipulation.Filter;
+import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunNotifier;
 
 /**
@@ -76,6 +78,8 @@ public class JUnit4Provider
 
     private final int rerunFailingTestsCount;
 
+    private final int rerunFailingTestsAtEndCount;
+
     private TestsToRun testsToRun;
 
     public JUnit4Provider( ProviderParameters booterParameters )
@@ -89,6 +93,7 @@ public class JUnit4Provider
         jUnit4TestChecker = new JUnit4TestChecker( testClassLoader );
         testResolver = booterParameters.getTestRequest().getTestListResolver();
         rerunFailingTestsCount = booterParameters.getTestRequest().getRerunFailingTestsCount();
+        rerunFailingTestsAtEndCount = booterParameters.getTestRequest().getRerunFailingTestsAtEndCount();
     }
 
     public RunResult invoke( Object forkTestSet )
@@ -133,6 +138,8 @@ public class JUnit4Provider
         runNotifier.fireTestRunFinished( result );
 
         JUnit4RunListener.rethrowAnyTestMechanismFailures( result );
+
+        rerunAtEnd( reporterFactory, result.getFailures() );
 
         closeRunNotifier( jUnit4TestSetReporter, customRunListeners );
         return reporterFactory.close();
@@ -180,6 +187,60 @@ public class JUnit4Provider
             }
         }
     }
+
+    private void rerunFailedMethods( Class<?> clazz, RunListener reporter, RunNotifier listeners,
+                                 Set<String> failingTestMethods )
+    {
+
+        final ReportEntry report = new SimpleReportEntry( getClass().getName(), clazz.getName() );
+        reporter.testSetStarting( report );
+        try
+        {
+             for ( int i = 0; i < rerunFailingTestsAtEndCount; i++ )
+            {
+                executeFailedMethod( clazz, listeners, failingTestMethods );
+            }
+        }
+        catch ( Throwable e )
+        {
+            String reportName = report.getName();
+            String reportSourceName = report.getSourceName();
+            PojoStackTraceWriter stackWriter = new PojoStackTraceWriter( reportSourceName, reportName, e );
+            reporter.testError( SimpleReportEntry.withException( reportSourceName, reportName, stackWriter ) );
+        }
+        finally
+        {
+            reporter.testSetCompleted( report );
+        }
+
+    }
+
+    private void rerunAtEnd( ReporterFactory reporterFactory, List<Failure> allFailures )
+    {
+        if ( allFailures.size() == 0 )
+        {
+            return;
+        }
+
+        RunListener reporter = reporterFactory.createReporter();
+        ConsoleOutputCapture.startCapture( (ConsoleOutputReceiver) reporter );
+        JUnit4RunListener jUnit4TestSetReporter = new JUnit4RunListener( reporter );
+
+        Result result = new Result();
+        RunNotifier runNotifer = getRunNotifier( jUnit4TestSetReporter, result, customRunListeners );
+        runNotifer.fireTestRunStarted( null );
+
+        Map<Class<?>, Set<String>> testClassMethods =
+            JUnit4ProviderUtil.generateFailingTests( allFailures, testsToRun );
+
+        for ( Map.Entry<Class<?>, Set<String>> failingClassMethodsPair : testClassMethods.entrySet() )
+        {
+            rerunFailedMethods( failingClassMethodsPair.getKey(), reporter, runNotifer,
+                                failingClassMethodsPair.getValue() );
+        }
+        runNotifer.fireTestRunFinished( result );
+    }
+
 
     private static RunNotifier getRunNotifier( org.junit.runner.notification.RunListener main, Result result,
                                         List<org.junit.runner.notification.RunListener> others )

@@ -108,6 +108,14 @@ public class DefaultRunOrderCalculator
         {
             return getReverseAlphabeticalComparator();
         }
+        else if ( RunOrder.SIMPLE_ALPHABETICAL.equals( runOrder ) )
+        {
+            return getSimpleAlphabeticalComparator();
+        }
+        else if ( RunOrder.REVERSE_SIMPLE_ALPHABETICAL.equals( runOrder ) )
+        {
+            return getReverseSimpleAlphabeticalComparator();
+        }
         else if ( RunOrder.HOURLY.equals( runOrder ) )
         {
             final int hour = Calendar.getInstance().get( Calendar.HOUR_OF_DAY );
@@ -137,6 +145,28 @@ public class DefaultRunOrderCalculator
             public int compare( Class o1, Class o2 )
             {
                 return o1.getName().compareTo( o2.getName() );
+            }
+        };
+    }
+
+    private Comparator<Class> getSimpleAlphabeticalComparator()
+    {
+        return new Comparator<Class>()
+        {
+            public int compare( Class o1, Class o2 )
+            {
+                return o1.getSimpleName().compareTo( o2.getSimpleName() );
+            }
+        };
+    }
+
+    private Comparator<Class> getReverseSimpleAlphabeticalComparator()
+    {
+        return new Comparator<Class>()
+        {
+            public int compare( Class o1, Class o2 )
+            {
+                return o2.getSimpleName().compareTo( o1.getSimpleName() );
             }
         };
     }

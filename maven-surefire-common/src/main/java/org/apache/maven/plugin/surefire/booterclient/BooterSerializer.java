@@ -100,6 +100,8 @@ class BooterSerializer
             properties.setNullableProperty( BooterConstants.REQUESTEDTEST, requestedTest );
             properties.setNullableProperty( BooterConstants.RERUN_FAILING_TESTS_COUNT,
                                             String.valueOf( testSuiteDefinition.getRerunFailingTestsCount() ) );
+            properties.setNullableProperty( BooterConstants.RERUN_FAILING_TESTS_AT_END_COUNT,
+                                            String.valueOf( testSuiteDefinition.getRerunFailingTestsAtEndCount() ) );
         }
 
         DirectoryScannerParameters directoryScannerParameters = booterConfiguration.getDirScannerParams();
