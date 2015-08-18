@@ -20,8 +20,6 @@ package org.apache.maven.plugin.failsafe;
  */
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
 
@@ -37,8 +35,6 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.shared.utils.ReaderFactory;
 import org.apache.maven.shared.utils.StringUtils;
 import org.apache.maven.surefire.suite.RunResult;
-
-import static org.apache.maven.shared.utils.io.IOUtil.close;
 
 /**
  * Run integration tests using Surefire.
@@ -320,15 +316,9 @@ public class IntegrationTestMojo
         return rerunFailingTestsAtEndCount;
     }
 
+    @SuppressWarnings( "unchecked" )
     protected void handleSummary( RunResult summary, Exception firstForkException )
         throws MojoExecutionException, MojoFailureException
-    {
-        writeSummary( summary, firstForkException );
-    }
-
-    @SuppressWarnings( "unchecked" )
-    private void writeSummary( RunResult summary, Exception firstForkException )
-        throws MojoExecutionException
     {
         File summaryFile = getSummaryFile();
         if ( !summaryFile.getParentFile().isDirectory() )
@@ -337,8 +327,6 @@ public class IntegrationTestMojo
             summaryFile.getParentFile().mkdirs();
         }
 
-        FileOutputStream fout = null;
-        FileInputStream fin = null;
         try
         {
             Object token = getPluginContext().get( FAILSAFE_IN_PROGRESS_CONTEXT_KEY );
@@ -347,11 +335,6 @@ public class IntegrationTestMojo
         catch ( IOException e )
         {
             throw new MojoExecutionException( e.getMessage(), e );
-        }
-        finally
-        {
-            close( fin );
-            close( fout );
         }
 
         getPluginContext().put( FAILSAFE_IN_PROGRESS_CONTEXT_KEY, FAILSAFE_IN_PROGRESS_CONTEXT_KEY );
@@ -616,7 +599,7 @@ public class IntegrationTestMojo
         return failIfNoSpecifiedTests;
     }
 
-    public void setFailIfNoSpecifiedTests( Boolean failIfNoSpecifiedTests )
+    public void setFailIfNoSpecifiedTests( boolean failIfNoSpecifiedTests )
     {
         this.failIfNoSpecifiedTests = failIfNoSpecifiedTests;
     }

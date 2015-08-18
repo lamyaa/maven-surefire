@@ -21,8 +21,10 @@ package org.apache.maven.surefire.util;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * @author Kristian Rosenvold
@@ -49,21 +51,21 @@ public class DefaultScanResult
         return files.get( index );
     }
 
-    public void writeTo( Properties properties )
+    public void writeTo( Map<String, String> properties )
     {
         for ( int i = 0, size = files.size(); i < size; i++ )
         {
-            properties.setProperty( SCAN_RESULT_NUMBER + i, files.get( i ) );
+            properties.put( SCAN_RESULT_NUMBER + i, files.get( i ) );
         }
     }
 
-    public static DefaultScanResult from( Properties properties )
+    public static DefaultScanResult from( Map<String, String> properties )
     {
         List<String> result = new ArrayList<String>();
         int i = 0;
         while ( true )
         {
-            String item = properties.getProperty( SCAN_RESULT_NUMBER + ( i++ ) );
+            String item = properties.get( SCAN_RESULT_NUMBER + ( i++ ) );
             if ( item == null )
             {
                 return new DefaultScanResult( result );
@@ -84,14 +86,14 @@ public class DefaultScanResult
 
     public TestsToRun applyFilter( ScannerFilter scannerFilter, ClassLoader testClassLoader )
     {
-        List<Class> result = new ArrayList<Class>();
+        Set<Class<?>> result = new LinkedHashSet<Class<?>>();
 
         int size = size();
         for ( int i = 0; i < size; i++ )
         {
             String className = getClassName( i );
 
-            Class testClass = loadClass( testClassLoader, className );
+            Class<?> testClass = loadClass( testClassLoader, className );
 
             if ( scannerFilter == null || scannerFilter.accept( testClass ) )
             {
@@ -102,16 +104,16 @@ public class DefaultScanResult
         return new TestsToRun( result );
     }
 
-    public List getClassesSkippedByValidation( ScannerFilter scannerFilter, ClassLoader testClassLoader )
+    public List<Class<?>> getClassesSkippedByValidation( ScannerFilter scannerFilter, ClassLoader testClassLoader )
     {
-        List<Class> result = new ArrayList<Class>();
+        List<Class<?>> result = new ArrayList<Class<?>>();
 
         int size = size();
         for ( int i = 0; i < size; i++ )
         {
             String className = getClassName( i );
 
-            Class testClass = loadClass( testClassLoader, className );
+            Class<?> testClass = loadClass( testClassLoader, className );
 
             if ( scannerFilter != null && !scannerFilter.accept( testClass ) )
             {
@@ -122,18 +124,16 @@ public class DefaultScanResult
         return result;
     }
 
-    private static Class loadClass( ClassLoader classLoader, String className )
+    private static Class<?> loadClass( ClassLoader classLoader, String className )
     {
-        Class testClass;
         try
         {
-            testClass = classLoader.loadClass( className );
+            return classLoader.loadClass( className );
         }
         catch ( ClassNotFoundException e )
         {
             throw new RuntimeException( "Unable to create test class '" + className + "'", e );
         }
-        return testClass;
     }
 
     public DefaultScanResult append( DefaultScanResult other )

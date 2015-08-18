@@ -25,8 +25,8 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.factory.ArtifactFactory;
@@ -52,8 +53,6 @@ import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.artifact.versioning.InvalidVersionSpecificationException;
 import org.apache.maven.artifact.versioning.VersionRange;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Plugin;
-import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -62,6 +61,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.surefire.booterclient.ChecksumCalculator;
 import org.apache.maven.plugin.surefire.booterclient.ForkConfiguration;
 import org.apache.maven.plugin.surefire.booterclient.ForkStarter;
+import org.apache.maven.plugin.surefire.booterclient.ProviderDetector;
 import org.apache.maven.plugin.surefire.util.DependencyScanner;
 import org.apache.maven.plugin.surefire.util.DirectoryScanner;
 import org.apache.maven.plugins.annotations.Component;
@@ -79,6 +79,8 @@ import org.apache.maven.surefire.booter.ProviderParameterNames;
 import org.apache.maven.surefire.booter.StartupConfiguration;
 import org.apache.maven.surefire.booter.SurefireBooterForkException;
 import org.apache.maven.surefire.booter.SurefireExecutionException;
+import org.apache.maven.surefire.cli.CommandLineOption;
+import org.apache.maven.surefire.providerapi.SurefireProvider;
 import org.apache.maven.surefire.report.ReporterConfiguration;
 import org.apache.maven.surefire.suite.RunResult;
 import org.apache.maven.surefire.testset.DirectoryScannerParameters;
@@ -689,9 +691,12 @@ public abstract class AbstractSurefireMojo
 
     private TestListResolver includedExcludedTests;
 
+    private List<CommandLineOption> cli;
+
     public void execute()
         throws MojoExecutionException, MojoFailureException
     {
+        cli = commandLineOptions();
         // Stuff that should have been final
         setupStuff();
 
@@ -852,7 +857,6 @@ public abstract class AbstractSurefireMojo
         handleSummary( current, firstForkException );
     }
 
-
     private void createDependencyResolver()
     {
         dependencyResolver =
@@ -863,14 +867,13 @@ public abstract class AbstractSurefireMojo
     protected List<ProviderInfo> createProviders()
         throws MojoFailureException, MojoExecutionException
     {
-        final Artifact junitDepArtifact = getJunitDepArtifact();
-        ProviderList wellKnownProviders =
-            new ProviderList( new DynamicProviderInfo( null ), new TestNgProviderInfo( getTestNgArtifact() ),
+        Artifact junitDepArtifact = getJunitDepArtifact();
+        return new ProviderList( new DynamicProviderInfo( null ),
+                              new TestNgProviderInfo( getTestNgArtifact() ),
                               new JUnitCoreProviderInfo( getJunitArtifact(), junitDepArtifact ),
                               new JUnit4ProviderInfo( getJunitArtifact(), junitDepArtifact ),
-                              new JUnit3ProviderInfo() );
-
-        return wellKnownProviders.resolve( getLog() );
+                              new JUnit3ProviderInfo() )
+            .resolve();
     }
 
     private SurefireProperties setupProperties()
@@ -907,7 +910,7 @@ public abstract class AbstractSurefireMojo
                 if ( getArgLine() == null || !getArgLine().contains( "-D" + o + "=" ) )
                 {
                     getLog().warn( o + " cannot be set as system property, use <argLine>-D"
-                                       + o + "=...<argLine> instead" );
+                                       + o + "=...</argLine> instead" );
                 }
             }
             for ( Object systemPropertyMatchingArgLine : systemPropertiesMatchingArgLine( result ) )
@@ -995,7 +998,6 @@ public abstract class AbstractSurefireMojo
         }
     }
 
-
     public static SurefireProperties createCopyAndReplaceForkNumPlaceholder(
         SurefireProperties effectiveSystemProperties, int threadNumber )
     {
@@ -1036,10 +1038,9 @@ public abstract class AbstractSurefireMojo
 
     protected void logReportsDirectory()
     {
-        getLog().info(
+        logDebugOrCliShowErrors(
             StringUtils.capitalizeFirstLetter( getPluginName() ) + " report directory: " + getReportsDirectory() );
     }
-
 
     final Toolchain getToolchain()
     {
@@ -1085,8 +1086,6 @@ public abstract class AbstractSurefireMojo
             DefaultArtifactVersion defaultArtifactVersion = new DefaultArtifactVersion( testNgArtifact.getVersion() );
             getProperties().setProperty( "testng.configurator", getConfiguratorName( defaultArtifactVersion ) );
         }
-
-
     }
 
     private static String getConfiguratorName( ArtifactVersion version )
@@ -1163,9 +1162,8 @@ public abstract class AbstractSurefireMojo
             checkNonForkedThreads( parallel );
         }
 
-        String usedThreadCount = Integer.toString( getThreadCount() );
         getProperties().setProperty( ProviderParameterNames.PARALLEL_PROP, usedParallel );
-        getProperties().setProperty( ProviderParameterNames.THREADCOUNT_PROP, usedThreadCount );
+        getProperties().setProperty( ProviderParameterNames.THREADCOUNT_PROP, Integer.toString( getThreadCount() ) );
         getProperties().setProperty( "perCoreThreadCount", Boolean.toString( getPerCoreThreadCount() ) );
         getProperties().setProperty( "useUnlimitedThreads", Boolean.toString( getUseUnlimitedThreads() ) );
         getProperties().setProperty( ProviderParameterNames.THREADCOUNTSUITES_PROP,
@@ -1175,21 +1173,22 @@ public abstract class AbstractSurefireMojo
         getProperties().setProperty( ProviderParameterNames.THREADCOUNTMETHODS_PROP,
                                      Integer.toString( getThreadCountMethods() ) );
         getProperties().setProperty( ProviderParameterNames.PARALLEL_TIMEOUT_PROP,
-                Double.toString( getParallelTestsTimeoutInSeconds() ) );
+                                     Double.toString( getParallelTestsTimeoutInSeconds() ) );
         getProperties().setProperty( ProviderParameterNames.PARALLEL_TIMEOUTFORCED_PROP,
-                Double.toString( getParallelTestsTimeoutForcedInSeconds() ) );
+                                     Double.toString( getParallelTestsTimeoutForcedInSeconds() ) );
         getProperties().setProperty( ProviderParameterNames.PARALLEL_OPTIMIZE_PROP,
                                      Boolean.toString( isParallelOptimized() ) );
 
-        String message =
-            "parallel='" + usedParallel + '\'' + ", perCoreThreadCount=" + getPerCoreThreadCount() + ", threadCount="
-                + usedThreadCount + ", useUnlimitedThreads=" + getUseUnlimitedThreads()
-                + ", threadCountSuites=" + getThreadCountSuites()
-                + ", threadCountClasses=" + getThreadCountClasses()
-                + ", threadCountMethods=" + getThreadCountMethods()
-                + ", parallelOptimized=" + isParallelOptimized();
+        String message = "parallel='" + usedParallel + '\''
+            + ", perCoreThreadCount=" + getPerCoreThreadCount()
+            + ", threadCount=" + getThreadCount()
+            + ", useUnlimitedThreads=" + getUseUnlimitedThreads()
+            + ", threadCountSuites=" + getThreadCountSuites()
+            + ", threadCountClasses=" + getThreadCountClasses()
+            + ", threadCountMethods=" + getThreadCountMethods()
+            + ", parallelOptimized=" + isParallelOptimized();
 
-        getLog().info( message );
+        logDebugOrCliShowErrors( message );
     }
 
     private void checkNonForkedThreads( String parallel ) throws MojoExecutionException
@@ -1446,11 +1445,28 @@ public abstract class AbstractSurefireMojo
                                                 specificTests, actualFailIfNoTests, getRunOrder() );
         }
 
-        Properties providerProperties = getProperties();
+        Map<String, String> providerProperties = toStringProperties( getProperties() );
 
         return new ProviderConfiguration( directoryScannerParameters, runOrderParameters, actualFailIfNoTests,
-                                          reporterConfiguration, testNg, testSuiteDefinition, providerProperties, null,
-                                          false );
+                                          reporterConfiguration,
+                                          testNg, // Not really used in provider. Limited to de/serializer.
+                                          testSuiteDefinition, providerProperties, null,
+                                          false, cli );
+    }
+
+    private static Map<String, String> toStringProperties( Properties properties )
+    {
+        Map<String, String> h = new ConcurrentHashMap<String, String>( properties.size() );
+        for ( Enumeration e = properties.keys() ; e.hasMoreElements() ; )
+        {
+            Object k = e.nextElement();
+            Object v = properties.get( k );
+            if ( k.getClass() == String.class && v.getClass() == String.class )
+            {
+                h.put( (String) k, (String) v );
+            }
+        }
+        return h;
     }
 
     public String getStatisticsFileName( String configurationHash )
@@ -1463,7 +1479,6 @@ public abstract class AbstractSurefireMojo
                                                      ClassLoaderConfiguration classLoaderConfiguration )
         throws MojoExecutionException, MojoFailureException
     {
-
         try
         {
             // cache the provider lookup
@@ -1529,7 +1544,7 @@ public abstract class AbstractSurefireMojo
 
     private boolean isSpecificTestSpecified()
     {
-        return getTest() != null;
+        return StringUtils.isNotBlank( getTest() );
     }
 
     private boolean isValidSuiteXmlFileConfig()
@@ -1621,7 +1636,7 @@ public abstract class AbstractSurefireMojo
         throws MojoFailureException
     {
         List<String> includes = null;
-        if ( isSpecificTestSpecified() && !isMultipleExecutionBlocksDetected() )
+        if ( isSpecificTestSpecified() )
         {
             includes = Collections.singletonList( getTest() );
         }
@@ -1643,13 +1658,13 @@ public abstract class AbstractSurefireMojo
             }
 
             checkMethodFilterInIncludesExcludes( includes );
-        }
 
-        // defaults here, qdox doesn't like the end javadoc value
-        // Have to wrap in an ArrayList as surefire expects an ArrayList instead of a List for some reason
-        if ( includes == null || includes.isEmpty() )
-        {
-            includes = Arrays.asList( getDefaultIncludes() );
+            // defaults here, qdox doesn't like the end javadoc value
+            // Have to wrap in an ArrayList as surefire expects an ArrayList instead of a List for some reason
+            if ( includes == null || includes.isEmpty() )
+            {
+                includes = Arrays.asList( getDefaultIncludes() );
+            }
         }
 
         return filterNulls( includes );
@@ -1706,26 +1721,12 @@ public abstract class AbstractSurefireMojo
         return result;
     }
 
-    private boolean isMultipleExecutionBlocksDetected()
-    {
-        MavenProject project = getProject();
-        if ( project != null )
-        {
-            String key = getPluginDescriptor().getPluginLookupKey();
-            Plugin plugin = (Plugin) project.getBuild().getPluginsAsMap().get( key );
-            if ( plugin != null )
-            {
-                Collection<PluginExecution> executions = plugin.getExecutions();
-                return executions != null && executions.size() > 1;
-            }
-        }
-        return false;
-    }
-
     private Artifact getTestNgArtifact()
         throws MojoExecutionException
     {
         Artifact artifact = getProjectArtifactMap().get( getTestNGArtifactName() );
+        Artifact projectArtifact = project.getArtifact();
+        String projectArtifactName = projectArtifact.getGroupId() + ":" + projectArtifact.getArtifactId();
 
         if ( artifact != null )
         {
@@ -1737,6 +1738,11 @@ public abstract class AbstractSurefireMojo
                         + artifact.getVersion() );
             }
         }
+        else if ( projectArtifactName.equals( getTestNGArtifactName() ) )
+        {
+            artifact = projectArtifact;
+        }
+
         return artifact;
 
     }
@@ -1755,7 +1761,16 @@ public abstract class AbstractSurefireMojo
 
     private Artifact getJunitArtifact()
     {
-        return getProjectArtifactMap().get( getJunitArtifactName() );
+        Artifact artifact = getProjectArtifactMap().get( getJunitArtifactName() );
+        Artifact projectArtifact = project.getArtifact();
+        String projectArtifactName = projectArtifact.getGroupId() + ":" + projectArtifact.getArtifactId();
+
+        if ( artifact == null && projectArtifactName.equals( getJunitArtifactName() ) )
+        {
+            artifact = projectArtifact;
+        }
+
+        return artifact;
     }
 
     private Artifact getJunitDepArtifact()
@@ -2033,7 +2048,7 @@ public abstract class AbstractSurefireMojo
      * @throws ArtifactNotFoundException   when it happens
      * @throws ArtifactResolutionException when it happens
      */
-    Classpath generateTestClasspath()
+    private Classpath generateTestClasspath()
         throws InvalidVersionSpecificationException, MojoFailureException, ArtifactResolutionException,
         ArtifactNotFoundException, MojoExecutionException
     {
@@ -2077,7 +2092,7 @@ public abstract class AbstractSurefireMojo
             {
                 if ( classpathElement != null )
                 {
-                    classpath.add( classpathElement );
+                    Collections.addAll( classpath, StringUtils.split( classpathElement, "," ) );
                 }
             }
         }
@@ -2092,17 +2107,19 @@ public abstract class AbstractSurefireMojo
         return new Classpath( classpath );
     }
 
-    void addTestNgUtilsArtifacts( List<String> classpath )
+    private void addTestNgUtilsArtifacts( List<String> classpath )
         throws ArtifactResolutionException, ArtifactNotFoundException
     {
         Artifact surefireArtifact = getPluginArtifactMap().get( "org.apache.maven.surefire:surefire-booter" );
         String surefireVersion = surefireArtifact.getBaseVersion();
 
-        Artifact[] extraTestNgArtifacts =
-            { getArtifactFactory().createArtifact( "org.apache.maven.surefire", "surefire-testng-utils",
-                                                   surefireVersion, "runtime", "jar" ),
-                getArtifactFactory().createArtifact( "org.apache.maven.surefire", "surefire-grouper", surefireVersion,
-                                                     "runtime", "jar" ) };
+        Artifact[] extraTestNgArtifacts = {
+            getArtifactFactory().createArtifact( "org.apache.maven.surefire", "surefire-testng-utils", surefireVersion,
+                                                 "runtime", "jar" ),
+
+            getArtifactFactory().createArtifact( "org.apache.maven.surefire", "surefire-grouper", surefireVersion,
+                                                 "runtime", "jar" )
+        };
 
         for ( Artifact artifact : extraTestNgArtifacts )
         {
@@ -2288,34 +2305,38 @@ public abstract class AbstractSurefireMojo
         return !isForking();
     }
 
+    private List<CommandLineOption> commandLineOptions()
+    {
+        return SurefireHelper.commandLineOptions( getSession(), getLog() );
+    }
+
     void warnIfDefunctGroupsCombinations()
         throws MojoFailureException, MojoExecutionException
     {
         if ( isAnyGroupsSelected() )
         {
-            if ( getTestNgArtifact() != null )
+            if ( getTestNgArtifact() == null )
             {
-                return;
+                Artifact junitArtifact = getJunitArtifact();
+                boolean junit47Compatible = isJunit47Compatible( junitArtifact );
+                if ( !junit47Compatible )
+                {
+                    if ( junitArtifact != null )
+                    {
+                        throw new MojoFailureException( "groups/excludedGroups are specified but JUnit version on "
+                                                            + "classpath is too old to support groups. "
+                                                            + "Check your dependency:tree to see if your project "
+                                                            + "is picking up an old junit version" );
+                    }
+                    throw new MojoFailureException( "groups/excludedGroups require TestNG or JUnit48+ on project test "
+                                                        + "classpath" );
+                }
             }
-            Artifact junitArtifact = getJunitArtifact();
-            boolean junit47Compatible = isJunit47Compatible( junitArtifact );
-            if ( junit47Compatible )
-            {
-                return;
-            }
-            if ( junitArtifact != null )
-            {
-                throw new MojoFailureException( "groups/excludedGroups are specified but JUnit version on classpath"
-                        + " is too old to support groups. Check your dependency:tree to see if your project"
-                        + " is picking up an old junit version" );
-            }
-            throw new MojoFailureException(
-                "groups/excludedGroups require TestNG or JUnit48+ on project test classpath" );
 
         }
     }
 
-    class TestNgProviderInfo
+    final class TestNgProviderInfo
         implements ProviderInfo
     {
         private final Artifact testNgArtifact;
@@ -2350,7 +2371,7 @@ public abstract class AbstractSurefireMojo
         }
     }
 
-    class JUnit3ProviderInfo
+    final class JUnit3ProviderInfo
         implements ProviderInfo
     {
         @Nonnull public String getProviderName()
@@ -2376,10 +2397,9 @@ public abstract class AbstractSurefireMojo
                                                             null );
 
         }
-
     }
 
-    class JUnit4ProviderInfo
+    final class JUnit4ProviderInfo
         implements ProviderInfo
     {
         private final Artifact junitArtifact;
@@ -2411,12 +2431,11 @@ public abstract class AbstractSurefireMojo
         {
             return dependencyResolver.getProviderClasspath( "surefire-junit4", surefireBooterArtifact.getBaseVersion(),
                                                             null );
-
         }
 
     }
 
-    class JUnitCoreProviderInfo
+    final class JUnitCoreProviderInfo
         implements ProviderInfo
     {
         private final Artifact junitArtifact;
@@ -2458,14 +2477,12 @@ public abstract class AbstractSurefireMojo
             return dependencyResolver.getProviderClasspath( "surefire-junit47", surefireBooterArtifact.getBaseVersion(),
                                                             null );
         }
-
     }
 
     /**
-     * Provides the Provider information for manually configured providers
-     *
+     * Provides the Provider information for manually configured providers.
      */
-    public class DynamicProviderInfo
+    final class DynamicProviderInfo
         implements ConfigurableProviderInfo
     {
         final String providerName;
@@ -2498,7 +2515,6 @@ public abstract class AbstractSurefireMojo
             convertTestNGParameters();
         }
 
-
         public Classpath getProviderClasspath()
             throws ArtifactResolutionException, ArtifactNotFoundException
         {
@@ -2506,7 +2522,77 @@ public abstract class AbstractSurefireMojo
             Artifact plugin = pluginArtifactMap.get( "org.apache.maven.plugins:maven-surefire-plugin" );
             return dependencyResolver.addProviderToClasspath( pluginArtifactMap, plugin );
         }
+    }
 
+    /**
+     * @author Kristian Rosenvold
+     */
+    final class ProviderList
+    {
+        private final ProviderInfo[] wellKnownProviders;
+
+        private final ConfigurableProviderInfo dynamicProvider;
+
+        ProviderList( ConfigurableProviderInfo dynamicProviderInfo, ProviderInfo... wellKnownProviders )
+        {
+            this.wellKnownProviders = wellKnownProviders;
+            this.dynamicProvider = dynamicProviderInfo;
+        }
+
+        @SuppressWarnings( "checkstyle:modifierorder" )
+        @Nonnull List<ProviderInfo> resolve()
+        {
+            List<ProviderInfo> providersToRun = new ArrayList<ProviderInfo>();
+            Set<String> manuallyConfiguredProviders = getManuallyConfiguredProviders();
+            for ( String name : manuallyConfiguredProviders )
+            {
+                ProviderInfo wellKnown = findByName( name );
+                ProviderInfo providerToAdd = wellKnown != null ? wellKnown : dynamicProvider.instantiate( name );
+                logDebugOrCliShowErrors( "Using configured provider " + providerToAdd.getProviderName() );
+                providersToRun.add( providerToAdd );
+            }
+            return manuallyConfiguredProviders.isEmpty() ? autoDetectOneProvider() : providersToRun;
+        }
+
+        @SuppressWarnings( "checkstyle:modifierorder" )
+        private @Nonnull List<ProviderInfo> autoDetectOneProvider()
+        {
+            List<ProviderInfo> providersToRun = new ArrayList<ProviderInfo>();
+            for ( ProviderInfo wellKnownProvider : wellKnownProviders )
+            {
+                if ( wellKnownProvider.isApplicable() )
+                {
+                    providersToRun.add( wellKnownProvider );
+                    return providersToRun;
+                }
+            }
+            return providersToRun;
+        }
+
+        private Set<String> getManuallyConfiguredProviders()
+        {
+            try
+            {
+                return ProviderDetector.getServiceNames( SurefireProvider.class,
+                                                         Thread.currentThread().getContextClassLoader() );
+            }
+            catch ( IOException e )
+            {
+                throw new RuntimeException( e );
+            }
+        }
+
+        private ProviderInfo findByName( String providerClassName )
+        {
+            for ( ProviderInfo wellKnownProvider : wellKnownProviders )
+            {
+                if ( wellKnownProvider.getProviderName().equals( providerClassName ) )
+                {
+                    return wellKnownProvider;
+                }
+            }
+            return null;
+        }
     }
 
     public abstract List<String> getIncludes();
@@ -2573,7 +2659,7 @@ public abstract class AbstractSurefireMojo
         this.systemPropertiesFile = systemPropertiesFile;
     }
 
-    public Properties getProperties()
+    private Properties getProperties()
     {
         return properties;
     }
@@ -2635,7 +2721,7 @@ public abstract class AbstractSurefireMojo
         return failIfNoTests;
     }
 
-    public void setFailIfNoTests( Boolean failIfNoTests )
+    public void setFailIfNoTests( boolean failIfNoTests )
     {
         this.failIfNoTests = failIfNoTests;
     }
@@ -3042,5 +3128,10 @@ public abstract class AbstractSurefireMojo
     public void setClasspathDependencyScopeExclude( String classpathDependencyScopeExclude )
     {
         this.classpathDependencyScopeExclude = classpathDependencyScopeExclude;
+    }
+
+    protected void logDebugOrCliShowErrors( CharSequence s )
+    {
+        SurefireHelper.logDebugOrCliShowErrors( s, getLog(), cli );
     }
 }

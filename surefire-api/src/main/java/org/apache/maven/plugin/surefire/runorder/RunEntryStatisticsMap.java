@@ -36,6 +36,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -53,7 +54,7 @@ public class RunEntryStatisticsMap
 
     public RunEntryStatisticsMap()
     {
-        this( new HashMap<String, RunEntryStatistics>() );
+        runEntryStatistics = new ConcurrentHashMap<String, RunEntryStatistics>();
     }
 
     public static RunEntryStatisticsMap fromFile( File file )
@@ -62,8 +63,7 @@ public class RunEntryStatisticsMap
         {
             try
             {
-                FileReader fileReader = new FileReader( file );
-                return fromReader( fileReader );
+                return fromReader( new FileReader( file ) );
             }
             catch ( FileNotFoundException e )
             {
@@ -73,9 +73,11 @@ public class RunEntryStatisticsMap
             {
                 throw new RuntimeException( e1 );
             }
-
         }
-        return new RunEntryStatisticsMap();
+        else
+        {
+            return new RunEntryStatisticsMap();
+        }
     }
 
     static RunEntryStatisticsMap fromReader( Reader fileReader )
@@ -103,15 +105,12 @@ public class RunEntryStatisticsMap
         PrintWriter printWriter = new PrintWriter( fos );
         List<RunEntryStatistics> items = new ArrayList<RunEntryStatistics>( runEntryStatistics.values() );
         Collections.sort( items, new RunCountComparator() );
-        RunEntryStatistics item;
-        for ( RunEntryStatistics item1 : items )
+        for ( RunEntryStatistics item : items )
         {
-            item = item1;
-            printWriter.println( item.getAsString() );
+            printWriter.println( item.toString() );
         }
         printWriter.close();
     }
-
 
     public RunEntryStatistics findOrCreate( ReportEntry reportEntry )
     {
@@ -144,17 +143,13 @@ public class RunEntryStatisticsMap
         public int compare( RunEntryStatistics o, RunEntryStatistics o1 )
         {
             int runtime = o.getSuccessfulBuilds() - o1.getSuccessfulBuilds();
-            if ( runtime == 0 )
-            {
-                return o.getRunTime() - o1.getRunTime();
-            }
-            return runtime;
+            return runtime == 0 ? o.getRunTime() - o1.getRunTime() : runtime;
         }
     }
 
-    public List<Class> getPrioritizedTestsClassRunTime( List testsToRun, int threadCount )
+    public List<Class<?>> getPrioritizedTestsClassRunTime( List<Class<?>> testsToRun, int threadCount )
     {
-        final List<PrioritizedTest> prioritizedTests = getPrioritizedTests( testsToRun, new TestRuntimeComparator() );
+        List<PrioritizedTest> prioritizedTests = getPrioritizedTests( testsToRun, new TestRuntimeComparator() );
         ThreadedExecutionScheduler threadedExecutionScheduler = new ThreadedExecutionScheduler( threadCount );
         for ( Object prioritizedTest1 : prioritizedTests )
         {
@@ -162,24 +157,22 @@ public class RunEntryStatisticsMap
         }
 
         return threadedExecutionScheduler.getResult();
-
     }
 
-    public List<Class> getPrioritizedTestsByFailureFirst( List testsToRun )
+    public List<Class<?>> getPrioritizedTestsByFailureFirst( List<Class<?>> testsToRun )
     {
-        final List prioritizedTests = getPrioritizedTests( testsToRun, new LeastFailureComparator() );
+        List<PrioritizedTest> prioritizedTests = getPrioritizedTests( testsToRun, new LeastFailureComparator() );
         return transformToClasses( prioritizedTests );
     }
 
-
-    private List<PrioritizedTest> getPrioritizedTests( List testsToRun, Comparator<Priority> priorityComparator )
+    private List<PrioritizedTest> getPrioritizedTests( List<Class<?>> testsToRun,
+                                                       Comparator<Priority> priorityComparator )
     {
         Map classPriorities = getPriorities( priorityComparator );
 
         List<PrioritizedTest> tests = new ArrayList<PrioritizedTest>();
-        for ( Object aTestsToRun : testsToRun )
+        for ( Class<?> clazz : testsToRun )
         {
-            Class clazz = (Class) aTestsToRun;
             Priority pri = (Priority) classPriorities.get( clazz.getName() );
             if ( pri == null )
             {
@@ -190,15 +183,14 @@ public class RunEntryStatisticsMap
         }
         Collections.sort( tests, new PrioritizedTestComparator() );
         return tests;
-
     }
 
-    private List<Class> transformToClasses( List tests )
+    private List<Class<?>> transformToClasses( List<PrioritizedTest> tests )
     {
-        List<Class> result = new ArrayList<Class>();
-        for ( Object test : tests )
+        List<Class<?>> result = new ArrayList<Class<?>>();
+        for ( PrioritizedTest test : tests )
         {
-            result.add( ( (PrioritizedTest) test ).getClazz() );
+            result.add( test.getClazz() );
         }
         return result;
     }
@@ -269,12 +261,6 @@ public class RunEntryStatisticsMap
     String extractClassName( String displayName )
     {
         Matcher m = PARENS.matcher( displayName );
-        if ( !m.find() )
-        {
-            return displayName;
-        }
-        return m.group( 1 );
+        return m.find() ? m.group( 1 ) : displayName;
     }
-
-
 }

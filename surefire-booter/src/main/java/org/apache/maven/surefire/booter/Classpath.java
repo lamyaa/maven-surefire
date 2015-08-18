@@ -75,17 +75,21 @@ public class Classpath implements Iterable<String>
     {
         ArrayList<String> elems = new ArrayList<String>( other.unmodifiableElements );
         elems.add( additionalElement );
-        this.unmodifiableElements = Collections.unmodifiableList( elems );
+        unmodifiableElements = Collections.unmodifiableList( elems );
     }
 
-    public Classpath( Iterable<String> elements )
+    public Classpath( Collection<String> elements )
     {
-        List<String> newCp = new ArrayList<String>(  );
+        List<String> newCp = new ArrayList<String>( elements.size() );
         for ( String element : elements )
         {
-            newCp.add( element );
+            element = element.trim();
+            if ( element.length() != 0 )
+            {
+                newCp.add( element );
+            }
         }
-        this.unmodifiableElements = Collections.unmodifiableList( newCp );
+        unmodifiableElements = Collections.unmodifiableList( newCp );
     }
 
     public static Classpath emptyClasspath()
@@ -142,10 +146,7 @@ public class Classpath implements Iterable<String>
 
         Classpath classpath = (Classpath) o;
 
-        return !( unmodifiableElements != null
-                        ? !unmodifiableElements.equals( classpath.unmodifiableElements )
-                        : classpath.unmodifiableElements != null );
-
+        return unmodifiableElements.equals( classpath.unmodifiableElements );
     }
 
     public ClassLoader createClassLoader( ClassLoader parent, boolean childDelegation, boolean enableAssertions,
@@ -177,7 +178,7 @@ public class Classpath implements Iterable<String>
 
     public int hashCode()
     {
-        return unmodifiableElements != null ? unmodifiableElements.hashCode() : 0;
+        return unmodifiableElements.hashCode();
     }
 
     public String getLogMessage( String descriptor )
@@ -213,7 +214,7 @@ public class Classpath implements Iterable<String>
             }
             else
             {
-                result.append( element );
+                result.append( (String) null );
             }
         }
         return result.toString();

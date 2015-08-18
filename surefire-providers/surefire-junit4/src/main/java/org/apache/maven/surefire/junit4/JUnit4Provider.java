@@ -22,13 +22,13 @@ package org.apache.maven.surefire.junit4;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.maven.surefire.common.junit4.ClassMethod;
 import org.apache.maven.surefire.common.junit4.JUnit4ProviderUtil;
+import org.apache.maven.surefire.common.junit4.JUnit4Reflector;
 import org.apache.maven.surefire.common.junit4.JUnit4RunListener;
 import org.apache.maven.surefire.common.junit4.JUnit4RunListenerFactory;
 import org.apache.maven.surefire.common.junit4.JUnit4TestChecker;
@@ -44,6 +44,7 @@ import org.apache.maven.surefire.report.RunListener;
 import org.apache.maven.surefire.report.SimpleReportEntry;
 import org.apache.maven.surefire.suite.RunResult;
 import org.apache.maven.surefire.testset.TestListResolver;
+import org.apache.maven.surefire.testset.TestRequest;
 import org.apache.maven.surefire.testset.TestSetFailedException;
 import org.apache.maven.surefire.util.RunOrderCalculator;
 import org.apache.maven.surefire.util.ScanResult;
@@ -56,12 +57,16 @@ import org.junit.runner.manipulation.Filter;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunNotifier;
 
+import static org.apache.maven.surefire.testset.TestListResolver.toClassFileName;
+
 /**
  * @author Kristian Rosenvold
  */
 public class JUnit4Provider
     extends AbstractProvider
 {
+    private static final String UNDETERMINED_TESTS_DESCRIPTION = "cannot determine test in forked JVM with surefire";
+
     private final ClassLoader testClassLoader;
 
     private final List<org.junit.runner.notification.RunListener> customRunListeners;
@@ -88,12 +93,13 @@ public class JUnit4Provider
         testClassLoader = booterParameters.getTestClassLoader();
         scanResult = booterParameters.getScanResult();
         runOrderCalculator = booterParameters.getRunOrderCalculator();
-        customRunListeners = JUnit4RunListenerFactory.
-            createCustomListeners( booterParameters.getProviderProperties().getProperty( "listener" ) );
+        String listeners = booterParameters.getProviderProperties().get( "listener" );
+        customRunListeners = JUnit4RunListenerFactory.createCustomListeners( listeners );
         jUnit4TestChecker = new JUnit4TestChecker( testClassLoader );
-        testResolver = booterParameters.getTestRequest().getTestListResolver();
-        rerunFailingTestsCount = booterParameters.getTestRequest().getRerunFailingTestsCount();
-        rerunFailingTestsAtEndCount = booterParameters.getTestRequest().getRerunFailingTestsAtEndCount();
+        TestRequest testRequest = booterParameters.getTestRequest();
+        testResolver = testRequest.getTestListResolver();
+        rerunFailingTestsCount = testRequest.getRerunFailingTestsCount();
+        rerunFailingTestsAtEndCount = testRequest.getRerunFailingTestsAtEndCount();
     }
 
     public RunResult invoke( Object forkTestSet )
@@ -128,7 +134,9 @@ public class JUnit4Provider
         Result result = new Result();
         RunNotifier runNotifier = getRunNotifier( jUnit4TestSetReporter, result, customRunListeners );
 
-        runNotifier.fireTestRunStarted( createTestsDescription() );
+        runNotifier.fireTestRunStarted( testsToRun.allowEagerReading()
+                                            ? createTestsDescription()
+                                            : JUnit4Reflector.createDescription( UNDETERMINED_TESTS_DESCRIPTION ) );
 
         for ( Class aTestsToRun : testsToRun )
         {
@@ -166,7 +174,7 @@ public class JUnit4Provider
         }
     }
 
-    private void executeWithRerun( Class<?> clazz, RunNotifier listeners )
+    private void executeWithRerun( Class<?> clazz, RunNotifier listeners ) throws TestSetFailedException
     {
         JUnitTestFailureListener failureListener = new JUnitTestFailureListener();
         listeners.addListener( failureListener );
@@ -178,11 +186,12 @@ public class JUnit4Provider
         {
             for ( int i = 0; i < rerunFailingTestsCount && !failureListener.getAllFailures().isEmpty(); i++ )
             {
-                Set<String> failedTests = JUnit4ProviderUtil.generateFailingTests( failureListener.getAllFailures() );
+                Set<ClassMethod> failedTests =
+                    JUnit4ProviderUtil.generateFailingTests( failureListener.getAllFailures() );
                 failureListener.reset();
                 if ( !failedTests.isEmpty() )
                 {
-                    executeFailedMethod( clazz, listeners, failedTests );
+                    executeFailedMethod( listeners, failedTests );
                 }
             }
         }
@@ -258,7 +267,7 @@ public class JUnit4Provider
     // I am not entirely sure as to why we do this explicit freeing, it's one of those
     // pieces of code that just seem to linger on in here ;)
     private static void closeRunNotifier( org.junit.runner.notification.RunListener main,
-                                   List<org.junit.runner.notification.RunListener> others )
+                                   Iterable<org.junit.runner.notification.RunListener> others )
     {
         RunNotifier notifier = new RunNotifier();
         notifier.removeListener( main );
@@ -268,10 +277,10 @@ public class JUnit4Provider
         }
     }
 
-    public Iterator<?> getSuites()
+    public Iterable<Class<?>> getSuites()
     {
         testsToRun = scanClassPath();
-        return testsToRun.iterator();
+        return testsToRun;
     }
 
     private TestsToRun scanClassPath()
@@ -280,13 +289,12 @@ public class JUnit4Provider
         return runOrderCalculator.orderTestClasses( scannedClasses );
     }
 
-    @SuppressWarnings( "unchecked" )
     private void upgradeCheck()
         throws TestSetFailedException
     {
         if ( isJUnit4UpgradeCheck() )
         {
-            List<Class> classesSkippedByValidation =
+            Collection<Class<?>> classesSkippedByValidation =
                 scanResult.getClassesSkippedByValidation( jUnit4TestChecker, testClassLoader );
             if ( !classesSkippedByValidation.isEmpty() )
             {
@@ -322,8 +330,6 @@ public class JUnit4Provider
     private static void execute( Class<?> testClass, RunNotifier notifier, Filter filter )
     {
         final int classModifiers = testClass.getModifiers();
-
-        // filter.shouldRunClass( testClass )
         if ( !Modifier.isAbstract( classModifiers ) && !Modifier.isInterface( classModifiers ) )
         {
             Runner runner = Request.aClass( testClass ).filterWith( filter ).getRunner();
@@ -334,11 +340,21 @@ public class JUnit4Provider
         }
     }
 
-    private static void executeFailedMethod( Class<?> testClass, RunNotifier notifier, Set<String> failedMethods )
+    private void executeFailedMethod( RunNotifier notifier, Set<ClassMethod> failedMethods )
+        throws TestSetFailedException
     {
-        for ( String failedMethod : failedMethods )
+        for ( ClassMethod failedMethod : failedMethods )
         {
-            Request.method( testClass, failedMethod ).getRunner().run( notifier );
+            try
+            {
+                Class<?> methodClass = Class.forName( failedMethod.getClazz(), true, testClassLoader );
+                String methodName = failedMethod.getMethod();
+                Request.method( methodClass, methodName ).getRunner().run( notifier );
+            }
+            catch ( ClassNotFoundException e )
+            {
+                throw new TestSetFailedException( "Unable to create test class '" + failedMethod.getClazz() + "'", e );
+            }
         }
     }
 
@@ -394,8 +410,6 @@ public class JUnit4Provider
     {
         private final TestListResolver methodFilter = JUnit4Provider.this.testResolver.createMethodFilters();
 
-        private final TestsToRun testsToRun = JUnit4Provider.this.testsToRun;
-
         @Override
         public boolean shouldRun( Description description )
         {
@@ -405,7 +419,7 @@ public class JUnit4Provider
             final boolean isValidTest = description.isTest() && cm.isValid();
             final String clazz = cm.getClazz();
             final String method = cm.getMethod();
-            return isSuite || isValidTest && methodFilter.shouldRun( testsToRun.getClassByName( clazz ), method );
+            return isSuite || isValidTest && methodFilter.shouldRun( toClassFileName( clazz ), method );
         }
 
         @Override

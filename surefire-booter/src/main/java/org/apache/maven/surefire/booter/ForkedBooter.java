@@ -24,6 +24,9 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.maven.surefire.providerapi.ProviderParameters;
 import org.apache.maven.surefire.providerapi.SurefireProvider;
@@ -33,6 +36,7 @@ import org.apache.maven.surefire.report.StackTraceWriter;
 import org.apache.maven.surefire.suite.RunResult;
 import org.apache.maven.surefire.testset.TestSetFailedException;
 import org.apache.maven.surefire.util.ReflectionUtils;
+import org.apache.maven.surefire.util.internal.DaemonThreadFactory;
 
 import static org.apache.maven.surefire.util.internal.StringUtils.encodeStringForForkCommunication;
 
@@ -46,8 +50,9 @@ import static org.apache.maven.surefire.util.internal.StringUtils.encodeStringFo
  * @author Emmanuel Venisse
  * @author Kristian Rosenvold
  */
-public class ForkedBooter
+public final class ForkedBooter
 {
+    private static final long SYSTEM_EXIT_TIMEOUT_IN_SECONDS = 30;
 
     /**
      * This method is invoked when Surefire is forked - this method parses and organizes the arguments passed to it and
@@ -93,7 +98,7 @@ public class ForkedBooter
             }
             else if ( readTestsFromInputStream )
             {
-                testSet = new LazyTestsToRun( System.in, originalOut );
+                testSet = new LazyTestsToRun( originalOut );
             }
             else
             {
@@ -106,7 +111,6 @@ public class ForkedBooter
             }
             catch ( InvocationTargetException t )
             {
-
                 LegacyPojoStackTraceWriter stackTraceWriter =
                     new LegacyPojoStackTraceWriter( "test subystem", "no method", t.getTargetException() );
                 StringBuilder stringBuilder = new StringBuilder();
@@ -144,14 +148,11 @@ public class ForkedBooter
         out.write( encodeBytes, 0, encodeBytes.length );
     }
 
-    private static final long SYSTEM_EXIT_TIMEOUT = 30 * 1000;
-
     private static void exit( final int returnCode )
     {
         launchLastDitchDaemonShutdownThread( returnCode );
         System.exit( returnCode );
     }
-
 
     private static RunResult runSuitesInProcess( Object testSet, StartupConfiguration startupConfiguration,
                                                  ProviderConfiguration providerConfiguration,
@@ -167,32 +168,29 @@ public class ForkedBooter
     private static ReporterFactory createForkingReporterFactory( ProviderConfiguration providerConfiguration,
                                                                  PrintStream originalSystemOut )
     {
-        final Boolean trimStackTrace = providerConfiguration.getReporterConfiguration().isTrimStackTrace();
+        final boolean trimStackTrace = providerConfiguration.getReporterConfiguration().isTrimStackTrace();
         return SurefireReflector.createForkingReporterFactoryInCurrentClassLoader( trimStackTrace, originalSystemOut );
     }
 
     @SuppressWarnings( "checkstyle:emptyblock" )
     private static void launchLastDitchDaemonShutdownThread( final int returnCode )
     {
-        Thread lastExit = new Thread( new Runnable()
-        {
-            public void run()
+        ThreadFactory threadFactory =
+            DaemonThreadFactory.newDaemonThreadFactory( "last-ditch-daemon-shutdown-thread-"
+                                                            + SYSTEM_EXIT_TIMEOUT_IN_SECONDS
+                                                            + "sec" );
+
+        Executors.newScheduledThreadPool( 1, threadFactory )
+            .schedule( new Runnable()
             {
-                try
+                public void run()
                 {
-                    Thread.sleep( SYSTEM_EXIT_TIMEOUT );
                     Runtime.getRuntime().halt( returnCode );
                 }
-                catch ( InterruptedException ignore )
-                {
-                }
-            }
-        } );
-        lastExit.setDaemon( true );
-        lastExit.start();
+            }, SYSTEM_EXIT_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS );
     }
 
-    public static RunResult invokeProviderInSameClassLoader( Object testSet, Object factory,
+    private static RunResult invokeProviderInSameClassLoader( Object testSet, Object factory,
                                                              ProviderConfiguration providerConfiguration,
                                                              boolean insideFork,
                                                              StartupConfiguration startupConfiguration1,
@@ -220,12 +218,11 @@ public class ForkedBooter
         }
     }
 
-    public static SurefireProvider createProviderInCurrentClassloader( StartupConfiguration startupConfiguration1,
+    private static SurefireProvider createProviderInCurrentClassloader( StartupConfiguration startupConfiguration1,
                                                                        boolean isInsideFork,
                                                                        ProviderConfiguration providerConfiguration,
                                                                        Object reporterManagerFactory1 )
     {
-
         BaseProviderFactory bpf = new BaseProviderFactory( (ReporterFactory) reporterManagerFactory1, isInsideFork );
         bpf.setTestRequest( providerConfiguration.getTestSuiteDefinition() );
         bpf.setReporterConfiguration( providerConfiguration.getReporterConfiguration() );
@@ -235,6 +232,7 @@ public class ForkedBooter
         bpf.setProviderProperties( providerConfiguration.getProviderProperties() );
         bpf.setRunOrderParameters( providerConfiguration.getRunOrderParameters() );
         bpf.setDirectoryScannerParameters( providerConfiguration.getDirScannerParams() );
+        bpf.setMainCliOptions( providerConfiguration.getMainCliOptions() );
         return (SurefireProvider) ReflectionUtils.instantiateOneArg( classLoader,
                                                                      startupConfiguration1.getActualClassName(),
                                                                      ProviderParameters.class, bpf );
