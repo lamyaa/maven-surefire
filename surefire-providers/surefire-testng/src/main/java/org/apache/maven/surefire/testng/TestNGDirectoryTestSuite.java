@@ -27,11 +27,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
 import org.apache.maven.surefire.NonAbstractClassFilter;
+import org.apache.maven.surefire.cli.CommandLineOption;
 import org.apache.maven.surefire.report.ConsoleOutputCapture;
 import org.apache.maven.surefire.report.ConsoleOutputReceiver;
 import org.apache.maven.surefire.report.ReportEntry;
@@ -55,9 +55,9 @@ public class TestNGDirectoryTestSuite
     implements TestNgTestSuite
 {
 
-    private final Map options;
+    private final Map<String, String> options;
 
-    private final Map junitOptions;
+    private final Map<String, String> junitOptions;
 
     private final String testSourceDirectory;
 
@@ -71,21 +71,20 @@ public class TestNGDirectoryTestSuite
 
     private final RunOrderCalculator runOrderCalculator;
 
-    private final Class junitTestClass;
+    private final Class<?> junitTestClass;
 
-    private Class<? extends Annotation> junitRunWithAnnotation;
+    private final Class<? extends Annotation> junitRunWithAnnotation;
 
-    private Class<? extends Annotation> junitTestAnnotation;
+    private final Class<? extends Annotation> junitTestAnnotation;
 
-    public TestNGDirectoryTestSuite( String testSourceDirectory, Properties confOptions, File reportsDirectory,
+    private final List<CommandLineOption> mainCliOptions;
+
+    public TestNGDirectoryTestSuite( String testSourceDirectory, Map<String, String> confOptions, File reportsDirectory,
                                      TestListResolver methodFilter, RunOrderCalculator runOrderCalculator,
-                                     ScanResult scanResult )
+                                     ScanResult scanResult, List<CommandLineOption> mainCliOptions )
     {
-
         this.runOrderCalculator = runOrderCalculator;
-
         this.options = confOptions;
-
         this.testSourceDirectory = testSourceDirectory;
         this.reportsDirectory = reportsDirectory;
         this.scanResult = scanResult;
@@ -94,6 +93,7 @@ public class TestNGDirectoryTestSuite
         this.junitRunWithAnnotation = findJUnitRunWithAnnotation();
         this.junitTestAnnotation = findJUnitTestAnnotation();
         this.junitOptions = createJUnitOptions();
+        this.mainCliOptions = mainCliOptions;
     }
 
     public void execute( TestsToRun testsToRun, ReporterFactory reporterManagerFactory )
@@ -110,25 +110,25 @@ public class TestNGDirectoryTestSuite
         }
         else if ( testsToRun.containsAtLeast( 1 ) )
         {
-            Class testClass = testsToRun.iterator().next();
+            Class<?> testClass = testsToRun.iterator().next();
             executeSingleClass( reporterManagerFactory, testClass );
         }
     }
 
-    private void executeSingleClass( ReporterFactory reporterManagerFactory, Class testClass )
+    private void executeSingleClass( ReporterFactory reporterManagerFactory, Class<?> testClass )
         throws TestSetFailedException
     {
-        this.options.put( "suitename", testClass.getName() );
+        options.put( "suitename", testClass.getName() );
 
         RunListener reporter = reporterManagerFactory.createReporter();
         ConsoleOutputCapture.startCapture( (ConsoleOutputReceiver) reporter );
 
         startTestSuite( reporter, this );
 
-        final Map optionsToUse = isJUnitTest( testClass ) ? junitOptions : options;
+        final Map<String, String> optionsToUse = isJUnitTest( testClass ) ? junitOptions : options;
 
-        TestNGExecutor.run( new Class[]{ testClass }, testSourceDirectory, optionsToUse, reporter, this,
-                            reportsDirectory, methodFilter );
+        TestNGExecutor.run( new Class<?>[]{ testClass }, testSourceDirectory, optionsToUse, reporter, this,
+                            reportsDirectory, methodFilter, mainCliOptions );
 
         finishTestSuite( reporter, this );
     }
@@ -136,31 +136,45 @@ public class TestNGDirectoryTestSuite
     public void executeLazy( TestsToRun testsToRun, ReporterFactory reporterFactory )
         throws TestSetFailedException
     {
-
-        for ( Class c : testsToRun )
+        for ( Class<?> c : testsToRun )
         {
             executeSingleClass( reporterFactory, c );
         }
     }
 
-    private Class findJUnitTestClass()
+    private Class<?> findJUnitTestClass()
     {
         return lookupClass( "junit.framework.Test" );
     }
 
-    private Class findJUnitRunWithAnnotation()
+    private Class<Annotation> findJUnitRunWithAnnotation()
     {
-        return lookupClass( "org.junit.runner.RunWith" );
+        return lookupAnnotation( "org.junit.runner.RunWith" );
     }
 
-    private Class findJUnitTestAnnotation()
+    private Class<Annotation> findJUnitTestAnnotation()
     {
-        return lookupClass( "org.junit.Test" );
+        return lookupAnnotation( "org.junit.Test" );
     }
 
-    private Class lookupClass( String className )
+    @SuppressWarnings( "unchecked" )
+    private static Class<Annotation> lookupAnnotation( String className )
     {
-        Class junitClass;
+        Class<Annotation> junitClass;
+        try
+        {
+            junitClass = (Class<Annotation>) Class.forName( className );
+        }
+        catch ( ClassNotFoundException e )
+        {
+            junitClass = null;
+        }
+        return junitClass;
+    }
+
+    private static Class<?> lookupClass( String className )
+    {
+        Class<?> junitClass;
         try
         {
             junitClass = Class.forName( className );
@@ -175,9 +189,9 @@ public class TestNGDirectoryTestSuite
     public void executeMulti( TestsToRun testsToRun, ReporterFactory reporterFactory )
         throws TestSetFailedException
     {
-        List<Class> testNgTestClasses = new ArrayList<Class>();
-        List<Class> junitTestClasses = new ArrayList<Class>();
-        for ( Class c : testsToRun )
+        List<Class<?>> testNgTestClasses = new ArrayList<Class<?>>();
+        List<Class<?>> junitTestClasses = new ArrayList<Class<?>>();
+        for ( Class<?> c : testsToRun )
         {
             if ( isJUnitTest( c ) )
             {
@@ -191,7 +205,7 @@ public class TestNGDirectoryTestSuite
 
         File testNgReportsDirectory = reportsDirectory, junitReportsDirectory = reportsDirectory;
 
-        if ( junitTestClasses.size() > 0 && testNgTestClasses.size() > 0 )
+        if ( !junitTestClasses.isEmpty() && !testNgTestClasses.isEmpty() )
         {
             testNgReportsDirectory = new File( reportsDirectory, "testng-native-results" );
             junitReportsDirectory = new File( reportsDirectory, "testng-junit-results" );
@@ -201,38 +215,38 @@ public class TestNGDirectoryTestSuite
         ConsoleOutputCapture.startCapture( (ConsoleOutputReceiver) reporterManager );
         startTestSuite( reporterManager, this );
 
-        Class[] testClasses = testNgTestClasses.toArray( new Class[testNgTestClasses.size()] );
+        Class<?>[] testClasses = testNgTestClasses.toArray( new Class<?>[testNgTestClasses.size()] );
 
-        TestNGExecutor.run( testClasses, this.testSourceDirectory, options, reporterManager, this,
-                            testNgReportsDirectory, methodFilter );
+        TestNGExecutor.run( testClasses, testSourceDirectory, options, reporterManager, this,
+                            testNgReportsDirectory, methodFilter, mainCliOptions );
 
-        if ( junitTestClasses.size() > 0 )
+        if ( !junitTestClasses.isEmpty() )
         {
             testClasses = junitTestClasses.toArray( new Class[junitTestClasses.size()] );
 
             TestNGExecutor.run( testClasses, testSourceDirectory, junitOptions, reporterManager, this,
-                                junitReportsDirectory, methodFilter );
+                                junitReportsDirectory, methodFilter, mainCliOptions );
         }
 
         finishTestSuite( reporterManager, this );
     }
 
-    private boolean isJUnitTest( Class c )
+    private boolean isJUnitTest( Class<?> c )
     {
         return isJunit3Test( c ) || isJunit4Test( c );
     }
 
-    private boolean isJunit4Test( Class c )
+    private boolean isJunit4Test( Class<?> c )
     {
         return hasJunit4RunWithAnnotation( c ) || hasJunit4TestAnnotation( c );
     }
 
-    private boolean hasJunit4RunWithAnnotation( Class c )
+    private boolean hasJunit4RunWithAnnotation( Class<?> c )
     {
         return junitRunWithAnnotation != null && c.getAnnotation( junitRunWithAnnotation ) != null;
     }
 
-    private boolean hasJunit4TestAnnotation( Class c )
+    private boolean hasJunit4TestAnnotation( Class<?> c )
     {
         if ( junitTestAnnotation != null )
         {
@@ -248,15 +262,15 @@ public class TestNGDirectoryTestSuite
         return false;
     }
 
-    private boolean isJunit3Test( Class c )
+    private boolean isJunit3Test( Class<?> c )
     {
         return junitTestClass != null && junitTestClass.isAssignableFrom( c );
     }
 
-    private Map createJUnitOptions()
+    private Map<String, String> createJUnitOptions()
     {
-        Map junitOptions = new HashMap( this.options );
-        junitOptions.put( "junit", Boolean.TRUE );
+        Map<String, String> junitOptions = new HashMap<String, String>( this.options );
+        junitOptions.put( "junit", "true" );
         return junitOptions;
     }
 
@@ -280,8 +294,8 @@ public class TestNGDirectoryTestSuite
 
         startTestSuite( reporter, this );
 
-        TestNGExecutor.run( new Class[] { testSet.getTestClass() }, this.testSourceDirectory, this.options, reporter,
-                            this, reportsDirectory, methodFilter );
+        TestNGExecutor.run( new Class<?>[] { testSet.getTestClass() }, testSourceDirectory, options, reporter,
+                            this, reportsDirectory, methodFilter, mainCliOptions );
 
         finishTestSuite( reporter, this );
     }
@@ -309,28 +323,20 @@ public class TestNGDirectoryTestSuite
 
     public String getSuiteName()
     {
-        String result = (String) options.get( "suitename" );
-        if ( result == null )
-        {
-            result = "TestSuite";
-        }
-        return result;
+        String result = options.get( "suitename" );
+        return result == null ? "TestSuite" : result;
     }
 
     private static String getSuiteName( Object suite )
     {
-        String result;
+        String result = "TestSuite";
         if ( suite instanceof TestNGDirectoryTestSuite )
         {
-            return ( (TestNGDirectoryTestSuite) suite ).getSuiteName();
+            result = ( (TestNGDirectoryTestSuite) suite ).getSuiteName();
         }
         else if ( suite instanceof TestNGXmlTestSuite )
         {
-            return ( (TestNGXmlTestSuite) suite ).getSuiteName();
-        }
-        else
-        {
-            result = "TestSuite";
+            result = ( (TestNGXmlTestSuite) suite ).getSuiteName();
         }
 
         return result;
@@ -349,7 +355,7 @@ public class TestNGDirectoryTestSuite
 
         final TestsToRun testsToRun = runOrderCalculator.orderTestClasses( scanned );
 
-        for ( Class testClass : testsToRun )
+        for ( Class<?> testClass : testsToRun )
         {
             TestNGTestSet testSet = new TestNGTestSet( testClass );
 
@@ -358,7 +364,6 @@ public class TestNGDirectoryTestSuite
                 throw new TestSetFailedException( "Duplicate test set '" + testSet.getName() + "'" );
             }
             testSets.put( testSet.getName(), testSet );
-
         }
 
         return Collections.unmodifiableSortedMap( testSets );

@@ -19,12 +19,17 @@ package org.apache.maven.plugin.surefire.booterclient.lazytestprovider;
  * under the License.
  */
 
+import org.apache.maven.surefire.booter.Command;
+import org.apache.maven.surefire.booter.MasterProcessCommand;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Queue;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.apache.maven.surefire.util.internal.StringUtils.encodeStringForForkCommunication;
+import static org.apache.maven.surefire.booter.MasterProcessCommand.TEST_SET_FINISHED;
+import static org.apache.maven.surefire.util.internal.StringUtils.requireNonNull;
 
 /**
  * An {@link InputStream} that, when read, provides test class names out of a queue.
@@ -39,27 +44,30 @@ import static org.apache.maven.surefire.util.internal.StringUtils.encodeStringFo
  */
 public class TestProvidingInputStream
     extends InputStream
+    implements NotifiableTestStream
 {
-    private final Queue<String> testItemQueue;
+    private final Semaphore semaphore = new Semaphore( 0 );
+
+    private final Queue<Command> commands;
+
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     private byte[] currentBuffer;
 
     private int currentPos;
 
-    private final Semaphore semaphore = new Semaphore( 0 );
+    private MasterProcessCommand lastCommand;
 
-    private FlushReceiverProvider flushReceiverProvider;
-
-    private volatile boolean closed = false;
+    private volatile FlushReceiverProvider flushReceiverProvider;
 
     /**
      * C'tor
      *
-     * @param testItemQueue source of the tests to be read from this stream
+     * @param commands source of the tests to be read from this stream
      */
-    public TestProvidingInputStream( Queue<String> testItemQueue )
+    public TestProvidingInputStream( Queue<Command> commands )
     {
-        this.testItemQueue = testItemQueue;
+        this.commands = commands;
     }
 
     /**
@@ -67,48 +75,78 @@ public class TestProvidingInputStream
      */
     public void setFlushReceiverProvider( FlushReceiverProvider flushReceiverProvider )
     {
-        this.flushReceiverProvider = flushReceiverProvider;
+        this.flushReceiverProvider = requireNonNull( flushReceiverProvider );
     }
 
+    public void testSetFinished()
+    {
+        commands.add( new Command( TEST_SET_FINISHED ) );
+    }
+
+    /**
+     * Used by single thread in StreamFeeder.
+     *
+     * @return {@inheritDoc}
+     * @throws IOException {@inheritDoc}
+     */
     @SuppressWarnings( "checkstyle:magicnumber" )
     @Override
-    public synchronized int read()
+    public int read()
         throws IOException
     {
-        if ( null == currentBuffer )
+        byte[] buffer = currentBuffer;
+        if ( buffer == null )
         {
-            if ( null != flushReceiverProvider && null != flushReceiverProvider.getFlushReceiver() )
+            if ( flushReceiverProvider != null )
             {
-                flushReceiverProvider.getFlushReceiver().flush();
+                FlushReceiver flushReceiver = flushReceiverProvider.getFlushReceiver();
+                if ( flushReceiver != null )
+                {
+                    flushReceiver.flush();
+                }
             }
 
-            semaphore.acquireUninterruptibly();
+            if ( lastCommand == TEST_SET_FINISHED || closed.get() )
+            {
+                close();
+                return -1;
+            }
 
-            if ( closed )
+            awaitNextTest();
+
+            if ( closed.get() )
             {
                 return -1;
             }
 
-            String currentElement = testItemQueue.poll();
-            if ( currentElement != null )
-            {
-                currentBuffer = encodeStringForForkCommunication( currentElement );
-                currentPos = 0;
-            }
-            else
-            {
-                return -1;
-            }
+            Command command = commands.poll();
+            lastCommand = command.getCommandType();
+            String test = command.getData();
+            buffer = lastCommand == TEST_SET_FINISHED ? lastCommand.encode() : lastCommand.encode( test );
         }
 
-        if ( currentPos < currentBuffer.length )
+        int b =  buffer[currentPos++] & 0xff;
+        if ( currentPos == buffer.length )
         {
-            return currentBuffer[currentPos++] & 0xff;
+            buffer = null;
+            currentPos = 0;
         }
-        else
+        currentBuffer = buffer;
+        return b;
+    }
+
+    private void awaitNextTest()
+        throws IOException
+    {
+        try
         {
+            semaphore.acquire();
+        }
+        catch ( InterruptedException e )
+        {
+            // help GC to free this object because StreamFeeder Thread cannot read it after IOE
             currentBuffer = null;
-            return '\n' & 0xff;
+            throw new IOException( e.getLocalizedMessage() );
         }
     }
 
@@ -117,13 +155,20 @@ public class TestProvidingInputStream
      */
     public void provideNewTest()
     {
-        semaphore.release();
+        if ( !closed.get() )
+        {
+            semaphore.release();
+        }
     }
 
     @Override
     public void close()
     {
-        closed = true;
-        semaphore.release();
+        if ( closed.compareAndSet( false, true ) )
+        {
+            currentBuffer = null;
+            semaphore.drainPermits();
+            semaphore.release();
+        }
     }
 }

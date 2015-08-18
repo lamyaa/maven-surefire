@@ -20,11 +20,9 @@ package org.apache.maven.surefire.util;
  */
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 import org.apache.maven.surefire.testset.TestSetFailedException;
 
@@ -34,34 +32,24 @@ import org.apache.maven.surefire.testset.TestSetFailedException;
  *
  * @author Kristian Rosenvold (junit core adaption)
  */
-public class TestsToRun implements Iterable<Class>
+public class TestsToRun implements Iterable<Class<?>>
 {
-    private final List<Class> locatedClasses;
+    private final Set<Class<?>> locatedClasses;
 
     /**
      * Constructor
      *
-     * @param locatedClasses A list of java.lang.Class objects representing tests to run
+     * @param locatedClasses A set of java.lang.Class objects representing tests to run
      */
-    public TestsToRun( List<Class> locatedClasses )
+    public TestsToRun( Set<Class<?>> locatedClasses )
     {
-        this.locatedClasses = Collections.unmodifiableList( locatedClasses );
-        Set<Class> testSets = new HashSet<Class>();
-
-        for ( Class testClass : locatedClasses )
-        {
-            if ( testSets.contains( testClass ) )
-            {
-                throw new RuntimeException( "Duplicate test set '" + testClass.getName() + "'" );
-            }
-            testSets.add( testClass );
-        }
+        this.locatedClasses = Collections.unmodifiableSet( locatedClasses );
     }
 
-    public static TestsToRun fromClass( Class clazz )
+    public static TestsToRun fromClass( Class<?> clazz )
         throws TestSetFailedException
     {
-        return new TestsToRun( Arrays.<Class>asList( clazz ) );
+        return new TestsToRun( Collections.<Class<?>>singleton( clazz ) );
     }
 
     /**
@@ -69,7 +57,7 @@ public class TestsToRun implements Iterable<Class>
      *
      * @return an unmodifiable iterator
      */
-    public Iterator<Class> iterator()
+    public Iterator<Class<?>> iterator()
     {
         return locatedClasses.iterator();
     }
@@ -78,10 +66,8 @@ public class TestsToRun implements Iterable<Class>
     {
         StringBuilder sb = new StringBuilder();
         sb.append( "TestsToRun: [" );
-        Iterator it = iterator();
-        while ( it.hasNext() )
+        for ( Class<?> clazz : this )
         {
-            Class clazz = (Class) it.next();
             sb.append( " " ).append( clazz.getName() );
         }
 
@@ -94,7 +80,7 @@ public class TestsToRun implements Iterable<Class>
         return containsAtLeast( iterator(), atLeast );
     }
 
-    private boolean containsAtLeast( Iterator it, int atLeast )
+    private boolean containsAtLeast( Iterator<Class<?>> it, int atLeast )
     {
         for ( int i = 0; i < atLeast; i++ )
         {
@@ -111,7 +97,7 @@ public class TestsToRun implements Iterable<Class>
 
     public boolean containsExactly( int items )
     {
-        Iterator it = iterator();
+        Iterator<Class<?>> it = iterator();
         return containsAtLeast( it, items ) && !it.hasNext();
     }
 
@@ -124,19 +110,18 @@ public class TestsToRun implements Iterable<Class>
         return true;
     }
 
-    public Class[] getLocatedClasses()
+    public Class<?>[] getLocatedClasses()
     {
         if ( !allowEagerReading() )
         {
             throw new IllegalStateException( "Cannot eagerly read" );
         }
-        List<Class> result = new ArrayList<Class>();
-        Iterator<Class> it = iterator();
-        while ( it.hasNext() )
+        Collection<Class<?>> result = new ArrayList<Class<?>>();
+        for ( Class<?> clazz : this )
         {
-            result.add( it.next() );
+            result.add( clazz );
         }
-        return result.toArray( new Class[result.size()] );
+        return result.toArray( new Class<?>[result.size()] );
     }
 
     /**
@@ -145,9 +130,9 @@ public class TestsToRun implements Iterable<Class>
      * @param className string used to find the test class
      * @return Class object with the matching name, null if could not find a class with the matching name
      */
-    public Class getClassByName( String className )
+    public Class<?> getClassByName( String className )
     {
-        for ( Class clazz : this )
+        for ( Class<?> clazz : this )
         {
             if ( clazz.getName().equals( className ) )
             {

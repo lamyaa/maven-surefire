@@ -19,27 +19,6 @@ package org.apache.maven.plugin.surefire.booterclient;
  * under the License.
  */
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Properties;
-import java.util.Queue;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.surefire.AbstractSurefireMojo;
 import org.apache.maven.plugin.surefire.CommonReflector;
@@ -56,6 +35,7 @@ import org.apache.maven.shared.utils.cli.CommandLineUtils;
 import org.apache.maven.shared.utils.cli.ShutdownHookUtils;
 import org.apache.maven.surefire.booter.Classpath;
 import org.apache.maven.surefire.booter.ClasspathConfiguration;
+import org.apache.maven.surefire.booter.Command;
 import org.apache.maven.surefire.booter.KeyValueSource;
 import org.apache.maven.surefire.booter.PropertiesWrapper;
 import org.apache.maven.surefire.booter.ProviderConfiguration;
@@ -69,9 +49,32 @@ import org.apache.maven.surefire.report.StackTraceWriter;
 import org.apache.maven.surefire.suite.RunResult;
 import org.apache.maven.surefire.testset.TestRequest;
 import org.apache.maven.surefire.util.DefaultScanResult;
+import org.apache.maven.surefire.util.internal.DaemonThreadFactory;
 import org.apache.maven.surefire.util.internal.StringUtils;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.apache.maven.surefire.booter.Classpath.join;
+import static org.apache.maven.surefire.booter.MasterProcessCommand.RUN_CLASS;
+import static java.lang.StrictMath.min;
 
 /**
  * Starts the fork or runs in-process.
@@ -89,6 +92,8 @@ import static org.apache.maven.surefire.booter.Classpath.join;
  */
 public class ForkStarter
 {
+    private final ThreadFactory threadFactory = DaemonThreadFactory.newDaemonThreadFactory();
+
     /**
      * Closes an InputStream
      */
@@ -133,7 +138,7 @@ public class ForkStarter
 
     private final DefaultReporterFactory defaultReporterFactory;
 
-    private final Collection<DefaultReporterFactory> defaultReporterFactoryList;
+    private final Collection<DefaultReporterFactory> defaultReporterFactories;
 
     private static volatile int systemPropertiesFileCounter = 0;
 
@@ -149,7 +154,7 @@ public class ForkStarter
         this.log = log;
         defaultReporterFactory = new DefaultReporterFactory( startupReportConfiguration );
         defaultReporterFactory.runStarting();
-        defaultReporterFactoryList = new ConcurrentLinkedQueue<DefaultReporterFactory>();
+        defaultReporterFactories = new ConcurrentLinkedQueue<DefaultReporterFactory>();
     }
 
     public RunResult run( SurefireProperties effectiveSystemProperties, DefaultScanResult scanResult )
@@ -157,7 +162,7 @@ public class ForkStarter
     {
         try
         {
-            Properties providerProperties = providerConfiguration.getProviderProperties();
+            Map<String, String> providerProperties = providerConfiguration.getProviderProperties();
             scanResult.writeTo( providerProperties );
             return isForkOnce()
                     ? run( effectiveSystemProperties, providerProperties )
@@ -165,16 +170,16 @@ public class ForkStarter
         }
         finally
         {
-            defaultReporterFactory.mergeFromOtherFactories( defaultReporterFactoryList );
+            defaultReporterFactory.mergeFromOtherFactories( defaultReporterFactories );
             defaultReporterFactory.close();
         }
     }
 
-    private RunResult run( SurefireProperties effectiveSystemProperties, Properties providerProperties )
+    private RunResult run( SurefireProperties effectiveSystemProperties, Map<String, String> providerProperties )
             throws SurefireBooterForkException
     {
         DefaultReporterFactory forkedReporterFactory = new DefaultReporterFactory( startupReportConfiguration );
-        defaultReporterFactoryList.add( forkedReporterFactory );
+        defaultReporterFactories.add( forkedReporterFactory );
         final ForkClient forkClient =
                 new ForkClient( forkedReporterFactory, startupReportConfiguration.getTestVmSystemProperties() );
         return fork( null, new PropertiesWrapper( providerProperties ), forkClient, effectiveSystemProperties, null );
@@ -204,42 +209,30 @@ public class ForkStarter
     private RunResult runSuitesForkOnceMultiple( final SurefireProperties effectiveSystemProperties, int forkCount )
         throws SurefireBooterForkException
     {
-
         ArrayList<Future<RunResult>> results = new ArrayList<Future<RunResult>>( forkCount );
-        ExecutorService executorService = new ThreadPoolExecutor( forkCount, forkCount, 60, TimeUnit.SECONDS,
+        ThreadPoolExecutor executorService = new ThreadPoolExecutor( forkCount, forkCount, 60, TimeUnit.SECONDS,
                                                                   new ArrayBlockingQueue<Runnable>( forkCount ) );
-
+        executorService.setThreadFactory( threadFactory );
         try
         {
-            // Ask to the executorService to run all tasks
-            RunResult globalResult = new RunResult( 0, 0, 0, 0 );
-
-            List<Class<?>> suites = new ArrayList<Class<?>>();
-            Iterator<Class<?>> suitesIterator = getSuitesIterator();
-            while ( suitesIterator.hasNext() )
+            final Queue<Command> commands = new ConcurrentLinkedQueue<Command>();
+            for ( Class<?> clazz : getSuitesIterator() )
             {
-                suites.add( suitesIterator.next() );
+                commands.add( new Command( RUN_CLASS, clazz.getName() ) );
             }
-            final Queue<String> messageQueue = new ConcurrentLinkedQueue<String>();
-            for ( Class<?> clazz : suites )
+            Collection<TestProvidingInputStream> testStreams = new ArrayList<TestProvidingInputStream>();
+            for ( int forkNum = 0, total = min( forkCount, commands.size() ); forkNum < total; forkNum++ )
             {
-                messageQueue.add( clazz.getName() );
-            }
-
-
-            for ( int forkNum = 0; forkNum < forkCount && forkNum < suites.size(); forkNum++ )
-            {
+                final TestProvidingInputStream testProvidingInputStream = new TestProvidingInputStream( commands );
+                testStreams.add( testProvidingInputStream );
                 Callable<RunResult> pf = new Callable<RunResult>()
                 {
                     public RunResult call()
                         throws Exception
                     {
-                        TestProvidingInputStream testProvidingInputStream =
-                                new TestProvidingInputStream( messageQueue );
-
                         DefaultReporterFactory forkedReporterFactory =
                             new DefaultReporterFactory( startupReportConfiguration );
-                        defaultReporterFactoryList.add( forkedReporterFactory );
+                        defaultReporterFactories.add( forkedReporterFactory );
                         ForkClient forkClient = new ForkClient( forkedReporterFactory,
                                                                 startupReportConfiguration.getTestVmSystemProperties(),
                                                                 testProvidingInputStream );
@@ -248,60 +241,29 @@ public class ForkStarter
                                      forkClient, effectiveSystemProperties, testProvidingInputStream );
                     }
                 };
-
                 results.add( executorService.submit( pf ) );
             }
-
-            for ( Future<RunResult> result : results )
-            {
-                try
-                {
-                    RunResult cur = result.get();
-                    if ( cur != null )
-                    {
-                        globalResult = globalResult.aggregate( cur );
-                    }
-                    else
-                    {
-                        throw new SurefireBooterForkException( "No results for " + result.toString() );
-                    }
-                }
-                catch ( InterruptedException e )
-                {
-                    throw new SurefireBooterForkException( "Interrupted", e );
-                }
-                catch ( ExecutionException e )
-                {
-                    throw new SurefireBooterForkException( "ExecutionException", e );
-                }
-            }
-            return globalResult;
-
+            dispatchTestSetFinished( testStreams );
+            return awaitResultsDone( results, executorService );
         }
         finally
         {
             closeExecutor( executorService );
         }
-
     }
 
     @SuppressWarnings( "checkstyle:magicnumber" )
-    private RunResult runSuitesForkPerTestSet( final SurefireProperties effectiveSystemProperties, final int forkCount )
+    private RunResult runSuitesForkPerTestSet( final SurefireProperties effectiveSystemProperties, int forkCount )
         throws SurefireBooterForkException
     {
-
         ArrayList<Future<RunResult>> results = new ArrayList<Future<RunResult>>( 500 );
-        ExecutorService executorService =
+        ThreadPoolExecutor executorService =
             new ThreadPoolExecutor( forkCount, forkCount, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>() );
-
+        executorService.setThreadFactory( threadFactory );
         try
         {
-            // Ask to the executorService to run all tasks
-            RunResult globalResult = new RunResult( 0, 0, 0, 0 );
-            final Iterator<Class<?>> suites = getSuitesIterator();
-            while ( suites.hasNext() )
+            for ( final Object testSet : getSuitesIterator() )
             {
-                final Object testSet = suites.next();
                 Callable<RunResult> pf = new Callable<RunResult>()
                 {
                     public RunResult call()
@@ -309,7 +271,7 @@ public class ForkStarter
                     {
                         DefaultReporterFactory forkedReporterFactory =
                             new DefaultReporterFactory( startupReportConfiguration );
-                        defaultReporterFactoryList.add( forkedReporterFactory );
+                        defaultReporterFactories.add( forkedReporterFactory );
                         ForkClient forkClient = new ForkClient( forkedReporterFactory,
                                                         startupReportConfiguration.getTestVmSystemProperties() );
                         return fork( testSet, new PropertiesWrapper( providerConfiguration.getProviderProperties() ),
@@ -317,40 +279,53 @@ public class ForkStarter
                     }
                 };
                 results.add( executorService.submit( pf ) );
-
             }
-
-            for ( Future<RunResult> result : results )
-            {
-                try
-                {
-                    RunResult cur = result.get();
-                    if ( cur != null )
-                    {
-                        globalResult = globalResult.aggregate( cur );
-                    }
-                    else
-                    {
-                        throw new SurefireBooterForkException( "No results for " + result.toString() );
-                    }
-                }
-                catch ( InterruptedException e )
-                {
-                    throw new SurefireBooterForkException( "Interrupted", e );
-                }
-                catch ( ExecutionException e )
-                {
-                    throw new SurefireBooterForkException( "ExecutionException", e );
-                }
-            }
-            return globalResult;
-
+            return awaitResultsDone( results, executorService );
         }
         finally
         {
             closeExecutor( executorService );
         }
+    }
 
+    private static RunResult awaitResultsDone( Collection<Future<RunResult>> results, ExecutorService executorService )
+        throws SurefireBooterForkException
+    {
+        RunResult globalResult = new RunResult( 0, 0, 0, 0 );
+        for ( Future<RunResult> result : results )
+        {
+            try
+            {
+                RunResult cur = result.get();
+                if ( cur != null )
+                {
+                    globalResult = globalResult.aggregate( cur );
+                }
+                else
+                {
+                    throw new SurefireBooterForkException( "No results for " + result.toString() );
+                }
+            }
+            catch ( InterruptedException e )
+            {
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+                throw new SurefireBooterForkException( "Interrupted", e );
+            }
+            catch ( ExecutionException e )
+            {
+                throw new SurefireBooterForkException( "ExecutionException", e );
+            }
+        }
+        return globalResult;
+    }
+
+    private static void dispatchTestSetFinished( Iterable<TestProvidingInputStream> testStreams )
+    {
+        for ( TestProvidingInputStream testStream : testStreams )
+        {
+            testStream.testSetFinished();
+        }
     }
 
     @SuppressWarnings( "checkstyle:magicnumber" )
@@ -365,6 +340,7 @@ public class ForkStarter
         }
         catch ( InterruptedException e )
         {
+            Thread.currentThread().interrupt();
             throw new SurefireBooterForkException( "Interrupted", e );
         }
     }
@@ -440,7 +416,7 @@ public class ForkStarter
         {
             testProvidingInputStream.setFlushReceiverProvider( cli );
             inputStreamCloser = new InputStreamCloser( testProvidingInputStream );
-            inputStreamCloserHook = new Thread( inputStreamCloser );
+            inputStreamCloserHook = DaemonThreadFactory.newDaemonThread( inputStreamCloser, "input-stream-closer" );
             ShutdownHookUtils.addShutDownHook( inputStreamCloserHook );
         }
         else
@@ -525,8 +501,7 @@ public class ForkStarter
         return runResult;
     }
 
-    @SuppressWarnings( "unchecked" )
-    private Iterator<Class<?>> getSuitesIterator()
+    private Iterable<Class<?>> getSuitesIterator()
         throws SurefireBooterForkException
     {
         try

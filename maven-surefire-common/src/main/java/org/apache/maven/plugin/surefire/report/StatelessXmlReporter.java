@@ -144,7 +144,7 @@ public class StatelessXmlReporter
                 {
                     throw new IllegalStateException( "Get null test method run history" );
                 }
-                if ( methodEntryList.size() == 0 )
+                if ( methodEntryList.isEmpty() )
                 {
                     continue;
                 }
@@ -293,7 +293,7 @@ public class StatelessXmlReporter
             {
                 throw new IllegalStateException( "Get null test method run history" );
             }
-            if ( methodEntryList.size() == 0 )
+            if ( methodEntryList.isEmpty() )
             {
                 continue;
             }

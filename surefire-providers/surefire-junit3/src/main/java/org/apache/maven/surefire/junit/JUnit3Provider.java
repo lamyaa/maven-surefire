@@ -19,7 +19,6 @@ package org.apache.maven.surefire.junit;
  * under the License.
  */
 
-import java.util.Iterator;
 import org.apache.maven.surefire.common.junit3.JUnit3Reflector;
 import org.apache.maven.surefire.common.junit3.JUnit3TestChecker;
 import org.apache.maven.surefire.providerapi.AbstractProvider;
@@ -97,7 +96,7 @@ public class JUnit3Provider
         if ( smClassName != null )
         {
             SecurityManager securityManager =
-                (SecurityManager) ReflectionUtils.instantiate( this.getClass().getClassLoader(), smClassName );
+                ReflectionUtils.instantiate( getClass().getClassLoader(), smClassName, SecurityManager.class );
             System.setSecurityManager( securityManager );
         }
 
@@ -116,7 +115,6 @@ public class JUnit3Provider
         return reflector.isJUnit3Available() && jUnit3TestChecker.accept( clazz )
             ? new JUnitTestSet( clazz, reflector )
             : new PojoTestSet( clazz );
-
     }
 
     private void executeTestSet( SurefireTestSet testSet, RunListener reporter, ClassLoader classLoader )
@@ -138,9 +136,9 @@ public class JUnit3Provider
         return runOrderCalculator.orderTestClasses( testsToRun );
     }
 
-    public Iterator getSuites()
+    public Iterable<Class<?>> getSuites()
     {
         testsToRun = scanClassPath();
-        return testsToRun.iterator();
+        return testsToRun;
     }
 }

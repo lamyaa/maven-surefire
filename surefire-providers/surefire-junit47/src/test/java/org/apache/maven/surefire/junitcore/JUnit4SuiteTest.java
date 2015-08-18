@@ -35,13 +35,21 @@ import org.junit.runners.Suite;
  * @since 2.16
  */
 @Suite.SuiteClasses( {
-        Surefire746Test.class,
-        Surefire813IncorrectResultTest.class,
-        ParallelComputerUtilTest.class,
-        ParallelComputerBuilderTest.class,
-        SchedulingStrategiesTest.class,
-        JUnitCoreParametersTest.class,
-        OptimizedParallelComputerTest.class
+    Surefire746Test.class,
+    Surefire813IncorrectResultTest.class,
+    ParallelComputerUtilTest.class,
+    ParallelComputerBuilderTest.class,
+    SchedulingStrategiesTest.class,
+    JUnitCoreParametersTest.class,
+    OptimizedParallelComputerTest.class,
+    ConcurrentRunListenerTest.class,
+    ConfigurableParallelComputerTest.class,
+    JUnit4Reflector481Test.class,
+    JUnitCoreParametersTest.class,
+    JUnitCoreRunListenerTest.class,
+    MavenSurefireJUnit47RunnerTest.class,
+    MavenSurefireJUnit48RunnerTest.class,
+    TestMethodTest.class
 } )
 @RunWith( Suite.class )
 public class JUnit4SuiteTest

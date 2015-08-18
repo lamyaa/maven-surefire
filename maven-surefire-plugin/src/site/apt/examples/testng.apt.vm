@@ -181,6 +181,17 @@ Using TestNG
   You can configure multiple custom listeners like this:
 
 +---+
+<dependencies>
+[...]
+  <dependency>
+    <groupId>your-testng-listener-artifact-groupid</groupId>
+    <artifactId>your-testng-listener-artifact-artifactid</artifactId>
+    <version>your-testng-listener-artifact-version</version>
+    <scope>test</scope>
+  </dependency>
+[...]
+</dependencies>
+[...]
 </plugins>
     [...]
       <plugin>
@@ -209,3 +220,32 @@ Using TestNG
 +---+
 
   For more information on TestNG, see the {{{http://www.testng.org}TestNG web site}}.
+
+  You can implement TestNG listener interface <<<org.testng.ITestListener>>> in
+  a separate test artifact <<<your-testng-listener-artifact>>> with scope=test, or in project test source code
+  <<<src/test/java>>>. You can filter test artifacts by the parameter <<<dependenciesToScan>>> to load its classes
+  in current ClassLoader of surefire-testng provider.
+
+* Running TestNG and JUnit Tests
+
+  TestNG 6.5.1 and higher provides support to run TestNG and JUnit 4.x in current Maven project. All you need
+  is to introduce TestNG and JUnit dependency in POM.
+
++---+
+<dependencies>
+  [...]
+  <dependency>
+    <groupId>org.testng</groupId>
+    <artifactId>testng</artifactId>
+    <version>6.9.4</version>
+    <scope>test</scope>
+  </dependency>
+  <dependency>
+    <groupId>junit</groupId>
+    <artifactId>junit</artifactId>
+    <version>4.10</version>
+    <scope>test</scope>
+  </dependency>
+  [...]
+</dependencies>
++---+

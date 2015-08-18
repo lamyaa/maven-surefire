@@ -21,8 +21,10 @@ package org.apache.maven.surefire.testng;
 
 import java.io.File;
 import java.util.Collection;
-import java.util.Iterator;
-import java.util.Properties;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.maven.surefire.cli.CommandLineOption;
 import org.apache.maven.surefire.providerapi.AbstractProvider;
 import org.apache.maven.surefire.providerapi.ProviderParameters;
 import org.apache.maven.surefire.report.ReporterConfiguration;
@@ -42,7 +44,7 @@ import org.apache.maven.surefire.util.TestsToRun;
 public class TestNGProvider
     extends AbstractProvider
 {
-    private final Properties providerProperties;
+    private final Map<String, String> providerProperties;
 
     private final ReporterConfiguration reporterConfiguration;
 
@@ -54,24 +56,22 @@ public class TestNGProvider
 
     private final ProviderParameters providerParameters;
 
-    private TestsToRun testsToRun;
-
     private final RunOrderCalculator runOrderCalculator;
+
+    private List<CommandLineOption> mainCliOptions;
+
+    private TestsToRun testsToRun;
 
     public TestNGProvider( ProviderParameters booterParameters )
     {
-        this.providerParameters = booterParameters;
-        this.testClassLoader = booterParameters.getTestClassLoader();
-        this.runOrderCalculator = booterParameters.getRunOrderCalculator();
-        this.providerProperties = booterParameters.getProviderProperties();
-        this.testRequest = booterParameters.getTestRequest();
+        providerParameters = booterParameters;
+        testClassLoader = booterParameters.getTestClassLoader();
+        runOrderCalculator = booterParameters.getRunOrderCalculator();
+        providerProperties = booterParameters.getProviderProperties();
+        testRequest = booterParameters.getTestRequest();
         reporterConfiguration = booterParameters.getReporterConfiguration();
-        this.scanResult = booterParameters.getScanResult();
-    }
-
-    public Boolean isRunnable()
-    {
-        return Boolean.TRUE;
+        scanResult = booterParameters.getScanResult();
+        mainCliOptions = booterParameters.getMainCliOptions();
     }
 
     public RunResult invoke( Object forkTestSet )
@@ -127,7 +127,7 @@ public class TestNGProvider
     {
         return new TestNGDirectoryTestSuite( testRequest.getTestSourceDirectory().toString(), providerProperties,
                                              reporterConfiguration.getReportsDirectory(), createMethodFilter(),
-                                             runOrderCalculator, scanResult );
+                                             runOrderCalculator, scanResult, mainCliOptions );
     }
 
     private TestNGXmlTestSuite getXmlSuite()
@@ -137,14 +137,14 @@ public class TestNGProvider
                                        reporterConfiguration.getReportsDirectory() );
     }
 
-
-    public Iterator getSuites()
+    @SuppressWarnings( "unchecked" )
+    public Iterable<Class<?>> getSuites()
     {
         if ( isTestNGXmlTestSuite( testRequest ) )
         {
             try
             {
-                return getXmlSuite().locateTestSets( testClassLoader ).keySet().iterator();
+                return getXmlSuite().locateTestSets( testClassLoader ).keySet();
             }
             catch ( TestSetFailedException e )
             {
@@ -154,7 +154,7 @@ public class TestNGProvider
         else
         {
             testsToRun = scanClassPath();
-            return testsToRun.iterator();
+            return testsToRun;
         }
     }
 
