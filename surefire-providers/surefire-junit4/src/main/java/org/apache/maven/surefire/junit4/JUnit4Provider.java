@@ -340,6 +340,14 @@ public class JUnit4Provider
         }
     }
 
+    private static void executeFailedMethod( Class<?> testClass, RunNotifier notifier, Set<String> failedMethods )
+    {
+        for ( String failedMethod : failedMethods )
+            {
+                Request.method( testClass, failedMethod ).getRunner().run( notifier );
+            }
+    }
+
     private void executeFailedMethod( RunNotifier notifier, Set<ClassMethod> failedMethods )
         throws TestSetFailedException
     {

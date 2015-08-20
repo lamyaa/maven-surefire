@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.List;
 
 import org.apache.maven.plugin.surefire.SurefireProperties;
+import org.apache.maven.surefire.booter.BooterConstants;
 import org.apache.maven.surefire.booter.ClassLoaderConfiguration;
 import org.apache.maven.surefire.booter.ClasspathConfiguration;
 import org.apache.maven.surefire.booter.KeyValueSource;

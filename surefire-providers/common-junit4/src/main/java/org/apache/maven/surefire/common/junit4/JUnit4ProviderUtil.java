@@ -28,6 +28,7 @@ import java.util.Set;
 
 import org.apache.maven.surefire.testset.TestSetFailedException;
 import org.apache.maven.surefire.util.internal.StringUtils;
+import org.apache.maven.surefire.util.TestsToRun;
 
 import org.junit.runner.Description;
 import org.junit.runner.notification.Failure;
@@ -78,6 +79,38 @@ public final class JUnit4ProviderUtil
                 throw new TestSetFailedException( "Unable to create test class '" + classMethod.getClazz() + "'", e );
             }
         }
+        return testClassMethods;
+    }
+
+    public static Map<Class<?>, Set<String>> generateFailingTests( List<Failure> allFailures, TestsToRun testsToRun )
+    {
+        Map<Class<?>, Set<String>> testClassMethods = new HashMap<Class<?>, Set<String>>();
+        for ( Failure failure : allFailures )
+            {
+                Description description = failure.getDescription();
+                if ( description.isTest() && !isFailureInsideJUnitItself( description ) )
+                    {
+                        ClassMethod classMethod = cutTestClassAndMethod( description );
+                        if ( classMethod.isValid() )
+                            {
+                                Class testClassObj = testsToRun.getClassByName( classMethod.getClazz() );
+                                if ( testClassObj != null )
+                                    {
+                                        Set<String> failingMethods = testClassMethods.get( testClassObj );
+                                        if ( failingMethods == null )
+                                            {
+                                                failingMethods = new HashSet<String>();
+                                                failingMethods.add( classMethod.getMethod() );
+                                                testClassMethods.put( testClassObj, failingMethods );
+                                            }
+                                        else
+                                            {
+                                                failingMethods.add( classMethod.getMethod() );
+                                            }
+                                    }
+                            }
+                    }
+            }
         return testClassMethods;
     }
 
