@@ -226,7 +226,7 @@ public class JUnit4Provider
 
     private void rerunAtEnd( ReporterFactory reporterFactory, List<Failure> allFailures )
     {
-        if ( allFailures.size() == 0 )
+        if ( allFailures.size() == 0 || rerunFailingTestsAtEndCount == 0 )
         {
             return;
         }
@@ -338,6 +338,14 @@ public class JUnit4Provider
                 runner.run( notifier );
             }
         }
+    }
+
+    private static void executeFailedMethod( Class<?> testClass, RunNotifier notifier, Set<String> failedMethods )
+    {
+        for ( String failedMethod : failedMethods )
+            {
+                Request.method( testClass, failedMethod ).getRunner().run( notifier );
+            }
     }
 
     private void executeFailedMethod( RunNotifier notifier, Set<ClassMethod> failedMethods )
