@@ -226,7 +226,7 @@ public class JUnit4Provider
 
     private void rerunAtEnd( ReporterFactory reporterFactory, List<Failure> allFailures )
     {
-        if ( allFailures.size() == 0 )
+        if ( allFailures.size() == 0 || rerunFailingTestsAtEndCount == 0 )
         {
             return;
         }
