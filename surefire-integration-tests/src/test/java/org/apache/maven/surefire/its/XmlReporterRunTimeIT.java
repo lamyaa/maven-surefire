@@ -51,7 +51,7 @@ public class XmlReporterRunTimeIT
             {
 		System.out.println( report.getTimeElapsed() );
                 assertTrue( "runorder.parallel.Test1 report.getTimeElapsed found:" + report.getTimeElapsed(),
-                            report.getTimeElapsed() >= 0.8f );
+                            report.getTimeElapsed() >= 0.6f );
             }
             else if ( "runorder.parallel.Test2".equals( report.getFullClassName() ) )
             {
