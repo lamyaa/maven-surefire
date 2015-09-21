@@ -29,41 +29,31 @@ import java.io.File;
 import java.util.List;
 
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 
 /**
- * Test reported runtime
+ * Test that runtime reported on console matches runtime in XML
  *
- * @author Kristian Rosenvold
+ * @author <a href="mailto:eloussi2@illinois.edu">Lamyaa Eloussi</a>
  */
-public class XmlReporterRunTimeIT
+public class Surefire1144XmlRunTimeIT
     extends SurefireJUnit4IntegrationTestCase
 {
     @Test
-    public void testForkModeAlways()
+    public void testXmlRunTime()
         throws Exception
     {
-        OutputValidator outputValidator = unpack( "/runorder-parallel" ).parallelMethods().executeTest();
+        OutputValidator outputValidator = unpack( "/surefire-1144-xml-runtime" ).forkOnce().executeTest();
 
         List<ReportTestSuite> reports = HelperAssertions.extractReports( new File[]{ outputValidator.getBaseDir() } );
-        for ( ReportTestSuite report : reports )
-        {
-            if ( "runorder.parallel.Test1".equals( report.getFullClassName() ) )
-            {
-		System.out.println( report.getTimeElapsed() );
-                assertTrue( "runorder.parallel.Test1 report.getTimeElapsed found:" + report.getTimeElapsed(),
-                            report.getTimeElapsed() >= 0.8f );
-            }
-            else if ( "runorder.parallel.Test2".equals( report.getFullClassName() ) )
-            {
-		System.out.println( report.getTimeElapsed() );
-                assertTrue( "runorder.parallel.Test2 report.getTimeElapsed found:" + report.getTimeElapsed(),
-                            report.getTimeElapsed() >= 0.5f );
-            }
-            else
-            {
-                System.out.println( "report = " + report );
-            }
-        }
+        assertEquals( 1, reports.size() ); //only one report
 
+        ReportTestSuite report = reports.get( 0 );
+        float xmlTime = report.getTimeElapsed();
+        assertTrue( "surefire1144.Test1 report.getTimeElapsed found:" + xmlTime,
+                     xmlTime >= 1.6f ); //include beforeClass and afterClass
+
+        outputValidator.verifyTextInLog( Float.toString( xmlTime ) ); //same time in console
     }
+
 }
